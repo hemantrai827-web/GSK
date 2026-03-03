@@ -1,0 +1,13 @@
+
+rules_version = '2';
+service firebase.storage {
+  match /b/{bucket}/o {
+    match /screenshots/{userId}/{imageId} {
+      // Fix for "Permission Denied": 
+      // Since this app uses custom Firestore-based auth (not Firebase Auth), 
+      // request.auth is null. We allow public write to the screenshots folder
+      // so users can upload deposit proofs.
+      allow read, write: if true;
+    }
+  }
+}
