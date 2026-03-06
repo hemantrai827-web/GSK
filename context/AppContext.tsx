@@ -34,6 +34,7 @@ interface AppContextType {
   scheduledResults: ResultLog[]; 
   transactions: Transaction[];
   depositRequests: DepositRequest[];
+  withdrawRequests: any[];
   bets: Bet[];
   walletBalance: number;
   qrCodeUrl: string;
@@ -42,6 +43,8 @@ interface AppContextType {
   approveDeposit: (id: string) => Promise<void>;
   rejectDeposit: (id: string) => Promise<void>;
   withdraw: (amount: number, paymentDetails?: string, bankDetails?: BankDetails) => Promise<boolean>;
+  approveWithdraw: (id: string) => Promise<void>;
+  rejectWithdraw: (id: string) => Promise<void>;
   uploadProof: (file: File) => Promise<string | null>;
   placeBet: (gameId: string, gameType: 'BAZAAR' | 'MATKA' | 'MINI_GAME' | 'SLOT', selection: string, amount: number, roundId?: string) => Promise<string | null>;
   placeBulkBets: (gameId: string, gameType: 'BAZAAR' | 'MATKA', betsList: { selection: string; amount: number }[], roundId?: string) => Promise<boolean>;
@@ -77,6 +80,7 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
   const [allUsers, setAllUsers] = useState<User[]>([]);
   const [transactions, setTransactions] = useState<Transaction[]>([]);
   const [depositRequests, setDepositRequests] = useState<DepositRequest[]>([]);
+  const [withdrawRequests, setWithdrawRequests] = useState<any[]>([]);
   const [bets, setBets] = useState<Bet[]>([]);
   const [connectionStatus, setConnectionStatus] = useState<'CONNECTED' | 'DISCONNECTED' | 'ERROR'>('CONNECTED');
   const [notification, setNotification] = useState<Notification | null>(null);
@@ -147,7 +151,7 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
                     const fresh = { id: docSnap.id, ...sanitize(raw) } as User;
                     setUser(prev => {
                         if (!prev) return fresh;
-                        if (prev.balance !== fresh.balance || prev.role !== fresh.role || prev.lockedBalance !== fresh.lockedBalance) {
+                        if (JSON.stringify(prev) !== JSON.stringify(fresh)) {
                             return fresh;
                         }
                         return prev;
@@ -195,10 +199,25 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
         }, (err) => console.error("Settings Sync Error:", err));
 
         const unsubGames = onSnapshot(collection(db, 'games'), (snap) => {
-            const list = snap.docs.map(doc => ({
-                id: doc.id,
-                ...(doc.data() as any)
-            }));
+            const now = Date.now();
+            const list = snap.docs.map(doc => {
+                const data = doc.data() as any;
+                let validResult = data.result_number;
+                
+                if (data.result_time && validResult) {
+                    const rTime = data.result_time.toDate ? data.result_time.toDate().getTime() : new Date(data.result_time).getTime();
+                    // Reset if older than 20 hours (72000000 ms)
+                    if (now - rTime > 72000000) {
+                        validResult = "";
+                    }
+                }
+
+                return {
+                    id: doc.id,
+                    ...data,
+                    result_number: validResult
+                };
+            });
             const sortedList = list.sort((a, b) => (a.hour_slot || 0) - (b.hour_slot || 0));
             setGames(sortedList);
         }, (err) => console.error("Games Sync Error:", err));
@@ -222,20 +241,24 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
   }, [user?.id, user?.role]); 
 
   useEffect(() => {
-      if (!user) { setTransactions([]); setDepositRequests([]); return; }
-      let qTx, qDep;
+      if (!user) { setTransactions([]); setDepositRequests([]); setWithdrawRequests([]); return; }
+      let qTx, qDep, qWd;
       let unsubTx = () => {};
       let unsubDep = () => {};
+      let unsubWd = () => {};
       try {
         const txRef = collection(db, 'transactions');
-        const depRef = collection(db, 'depositRequests');
+        const depRef = collection(db, 'deposit_requests');
+        const wdRef = collection(db, 'withdraw_requests');
         
         if (user.role === 'ADMIN' || user.role === 'AGENT' || user.role === 'SUB_AGENT') {
             qTx = query(txRef, orderBy('timestamp', 'desc'), limit(200)); 
             qDep = query(depRef, orderBy('createdAt', 'desc'), limit(200));
+            qWd = query(wdRef, orderBy('timestamp', 'desc'), limit(200));
         } else {
             qTx = query(txRef, where('userId', '==', user.id)); 
             qDep = query(depRef, where('userId', '==', user.id));
+            qWd = query(wdRef, where('userId', '==', user.id));
         }
         
         unsubTx = onSnapshot(qTx, (snap) => {
@@ -258,8 +281,16 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
             setDepositRequests(fetchedDeps);
         }, (err) => console.error("DepositRequests sync error:", err));
         
-        return () => { unsubTx(); unsubDep(); };
-      } catch (e) { console.error("Tx sync error", e); return () => { unsubTx(); unsubDep(); }; }
+        unsubWd = onSnapshot(qWd, (snap) => {
+            const fetchedWds = snap.docs.map(d => ({ id: d.id, ...sanitize(d.data()) }));
+            if (user.role !== 'ADMIN' && user.role !== 'AGENT' && user.role !== 'SUB_AGENT') {
+                fetchedWds.sort((a, b) => b.timestamp - a.timestamp);
+            }
+            setWithdrawRequests(fetchedWds);
+        }, (err) => console.error("WithdrawRequests sync error:", err));
+        
+        return () => { unsubTx(); unsubDep(); unsubWd(); };
+      } catch (e) { console.error("Tx sync error", e); return () => { unsubTx(); unsubDep(); unsubWd(); }; }
   }, [user?.role, user?.id]);
 
   useEffect(() => {
@@ -419,9 +450,10 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
       };
       
       if (role === 'AGENT') {
-          const expiresAt = new Date();
-          expiresAt.setDate(expiresAt.getDate() + 7);
+          const expiresAt = new Date(0); // Expire immediately so they have to pay the 7-day login fee
           newUser.access_expires_at = expiresAt;
+          newUser.agent_status = 'expired';
+          newUser.agent_expiry = expiresAt;
       }
       
       setDoc(doc(db, 'users', newUser.id), newUser);
@@ -486,7 +518,7 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
           if (foundUser.role === 'AGENT' && foundUser.access_expires_at) {
               const expiresAt = foundUser.access_expires_at.toDate ? foundUser.access_expires_at.toDate() : new Date(foundUser.access_expires_at);
               if (new Date() > expiresAt) {
-                  return { success: false, message: 'Your agent access has expired. Please contact the administrator.' };
+                  // We no longer block login. We handle it in the UI.
               }
           }
           
@@ -680,7 +712,7 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
               utr: utr,
               screenshotUrl: screenshotUrl
           };
-          await setDoc(doc(db, 'depositRequests', reqId), sanitize(reqData));
+          await setDoc(doc(db, 'deposit_requests', reqId), sanitize(reqData));
           return true;
       } catch (e: any) {
           console.error("Deposit Error:", e);
@@ -693,7 +725,7 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
       console.log("Approve ID:", id);
       try {
           await runTransaction(db, async (transaction) => {
-              const reqRef = doc(db, 'depositRequests', id);
+              const reqRef = doc(db, 'deposit_requests', id);
               const reqDoc = await transaction.get(reqRef);
               if (!reqDoc.exists()) throw new Error("Request not found");
               const reqData = reqDoc.data() as DepositRequest;
@@ -735,10 +767,10 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
   const rejectDeposit = async (id: string): Promise<void> => {
       console.log("Reject ID:", id);
       try {
-          await updateDoc(doc(db, 'depositRequests', id), { status: 'rejected' });
+          await updateDoc(doc(db, 'deposit_requests', id), { status: 'rejected' });
           
           // Add to transactions for history as rejected
-          const reqDoc = await getDoc(doc(db, 'depositRequests', id));
+          const reqDoc = await getDoc(doc(db, 'deposit_requests', id));
           if (reqDoc.exists()) {
               const reqData = reqDoc.data() as DepositRequest;
               const txId = 'tx-' + Date.now();
@@ -765,38 +797,97 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
   const withdraw = async (amount: number, paymentDetails?: string, bankDetails?: BankDetails): Promise<boolean> => {
       if (!user) return false;
       try {
-          await runTransaction(db, async (transaction) => {
-             const userRef = doc(db, 'users', user.id);
-             const userDoc = await transaction.get(userRef);
-             if (!userDoc.exists()) throw "User not found";
-             const userData = userDoc.data() as User;
-             if (userData.balance < amount) throw "Insufficient Balance";
+          const userRef = doc(db, 'users', user.id);
+          const userDoc = await getDoc(userRef);
+          if (!userDoc.exists()) throw new Error("User not found");
+          const userData = userDoc.data() as User;
+          if (userData.balance < amount) throw new Error("Insufficient Balance");
 
-             if (bankDetails) {
-                 transaction.update(userRef, { bankDetails: sanitize(bankDetails) });
-             }
-             
-             transaction.update(userRef, { 
-                 balance: increment(-amount),
-                 lockedBalance: increment(amount)
-             });
-
-             const txId = 'wd-' + Date.now() + '-' + Math.random().toString(36).substr(2, 5);
-             const tx: Transaction = {
-                 id: txId, userId: user.id, type: 'WITHDRAW', amount, status: 'PENDING',
-                 timestamp: Date.now(), description: paymentDetails || 'Withdrawal',
-                 bankDetailsSnapshot: bankDetails || userData.bankDetails,
-                 userName: userData.username,
-                 userMobile: userData.mobile
-             };
-             const txRef = doc(db, 'transactions', txId);
-             transaction.set(txRef, sanitize(tx));
-          });
+          if (bankDetails) {
+              await updateDoc(userRef, { bankDetails: sanitize(bankDetails) });
+          }
+          
+          const reqId = 'wd-' + Date.now() + '-' + Math.random().toString(36).substr(2, 5);
+          const reqData = {
+              id: reqId,
+              userId: user.id,
+              userName: userData.username,
+              userMobile: userData.mobile,
+              amount: amount,
+              status: 'pending',
+              timestamp: Date.now(),
+              paymentDetails: paymentDetails || '',
+              bankDetailsSnapshot: bankDetails || userData.bankDetails || null
+          };
+          await setDoc(doc(db, 'withdraw_requests', reqId), sanitize(reqData));
           return true;
       } catch (e: any) {
           console.error("Withdraw Error", e);
           showNotification(typeof e === 'string' ? e : "Withdrawal Failed", 'error');
           return false;
+      }
+  };
+
+  const approveWithdraw = async (id: string): Promise<void> => {
+      try {
+          await runTransaction(db, async (transaction) => {
+              const reqRef = doc(db, 'withdraw_requests', id);
+              const reqDoc = await transaction.get(reqRef);
+              if (!reqDoc.exists()) throw new Error("Request not found");
+              const reqData = reqDoc.data();
+              if (reqData.status !== 'pending') throw new Error("Request already processed");
+
+              const userRef = doc(db, 'users', reqData.userId);
+              const userDoc = await transaction.get(userRef);
+              if (!userDoc.exists()) throw new Error("User not found");
+              const userData = userDoc.data() as User;
+              
+              if (userData.balance < reqData.amount) throw new Error("Insufficient Balance");
+
+              transaction.update(reqRef, { status: 'approved' });
+              
+              transaction.update(userRef, { 
+                  balance: increment(-reqData.amount)
+              });
+
+              const txId = 'wd-' + Date.now() + '-' + Math.random().toString(36).substr(2, 5);
+              const tx: Transaction = {
+                  id: txId, userId: reqData.userId, type: 'WITHDRAW', amount: reqData.amount, status: 'COMPLETED',
+                  timestamp: Date.now(), description: reqData.paymentDetails || 'Withdrawal',
+                  bankDetailsSnapshot: reqData.bankDetailsSnapshot || null,
+                  userName: reqData.userName,
+                  userMobile: reqData.userMobile
+              };
+              const txRef = doc(db, 'transactions', txId);
+              transaction.set(txRef, sanitize(tx));
+          });
+          showNotification("Withdrawal approved", 'success');
+      } catch (e: any) {
+          console.error("Approve Withdraw Error", e);
+          showNotification(e.message || "Failed to approve withdrawal", 'error');
+      }
+  };
+
+  const rejectWithdraw = async (id: string): Promise<void> => {
+      try {
+          await updateDoc(doc(db, 'withdraw_requests', id), { status: 'rejected' });
+          
+          const reqDoc = await getDoc(doc(db, 'withdraw_requests', id));
+          if (reqDoc.exists()) {
+              const reqData = reqDoc.data();
+              const txId = 'tx-' + Date.now();
+              const tx: Transaction = {
+                  id: txId, userId: reqData.userId, type: 'WITHDRAW', amount: reqData.amount, status: 'REJECTED',
+                  timestamp: Date.now(), description: 'Withdrawal Rejected',
+                  userName: reqData.userName,
+                  userMobile: reqData.userMobile
+              };
+              await setDoc(doc(db, 'transactions', txId), sanitize(tx));
+          }
+          showNotification("Withdrawal rejected", 'success');
+      } catch (e: any) {
+          console.error("Reject Withdraw Error", e);
+          showNotification("Failed to reject withdrawal", 'error');
       }
   };
 
@@ -910,7 +1001,11 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
           }
           
           const newExpiry = new Date(currentExpiry + 7 * 24 * 60 * 60 * 1000);
-          await updateDoc(userRef, { access_expires_at: newExpiry });
+          await updateDoc(userRef, { 
+              access_expires_at: newExpiry,
+              agent_status: 'active',
+              agent_expiry: newExpiry
+          });
           showNotification('Agent access renewed for 7 days', 'success');
           return true;
       } catch (e) {
@@ -923,8 +1018,8 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
   return (
     <AppContext.Provider value={{
       user, allUsers, register, createStaffAccount, login, logout, requestSubAgent, promoteToSubAgent, findUserByIdentifier, adminAddFunds,
-      games, historyResults, scheduledResults, transactions, depositRequests, bets, walletBalance: user?.balance || 0,
-      qrCodeUrl, updateQrCode, deposit, approveDeposit, rejectDeposit, withdraw, uploadProof, placeBet, placeBulkBets, handleSlotSpin,
+      games, historyResults, scheduledResults, transactions, depositRequests, withdrawRequests, bets, walletBalance: user?.balance || 0,
+      qrCodeUrl, updateQrCode, deposit, approveDeposit, rejectDeposit, withdraw, approveWithdraw, rejectWithdraw, uploadProof, placeBet, placeBulkBets, handleSlotSpin,
       deleteResult, maintainResultHistory,
       addTransaction, processTransaction, referUser, bannerConfig, updateBanner, deleteBanner, pendingResults, connectionStatus,
       notification, showNotification, clearNotification, simulatedActivityEnabled, toggleSimulatedActivity, cancelPendingResult, renewAccess

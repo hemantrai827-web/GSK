@@ -34,14 +34,15 @@ isSupported().then((supported) => {
 export let db: any;
 
 try {
-  // Use standard getFirestore which handles singleton logic internally
-  db = getFirestore(app);
+  // Use initializeFirestore with experimentalForceLongPolling to bypass WebSocket issues
+  db = initializeFirestore(app, {
+    experimentalForceLongPolling: true,
+    localCache: memoryLocalCache()
+  });
 } catch (err: any) {
   console.warn("Firestore Init Error, falling back:", err);
   try {
-     db = initializeFirestore(app, {
-        localCache: memoryLocalCache()
-     });
+     db = getFirestore(app);
   } catch (e) {
      console.error("Critical Firestore Error:", e);
   }

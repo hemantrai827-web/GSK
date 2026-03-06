@@ -2,9 +2,11 @@
 import React, { useState, useMemo, useEffect } from 'react';
 import { useApp } from '../context/AppContext';
 import { Button } from '../components/ui/Button';
-import { Timer, Trophy, Trash2, CheckCircle, Wallet, Calendar, Zap, Sparkles, Gem, Lock, History, Clock } from 'lucide-react';
+import { Timer, Trophy, Trash2, CheckCircle, Wallet, Calendar, Zap, Sparkles, Gem, Lock, History, Clock, Crown } from 'lucide-react';
 import { GAME_RULES } from '../config/GameRules';
 import { RulesPopup } from '../components/RulesPopup';
+import { formatHourSlot } from '../utils/helpers';
+import { motion } from 'motion/react';
 
 export const Casino: React.FC = () => {
   const { games, walletBalance, placeBulkBets, historyResults } = useApp();
@@ -121,12 +123,19 @@ export const Casino: React.FC = () => {
   };
 
   return (
-    <div className="space-y-6">
-      {/* Rules Banner & Popup */}
-      <RulesPopup />
-
+    <motion.div 
+      initial={{ opacity: 0 }}
+      animate={{ opacity: 1 }}
+      transition={{ duration: 0.5 }}
+      className="space-y-6"
+    >
       <div className="flex flex-col md:flex-row gap-6">
-        <div className="w-full md:w-1/4 space-y-4 animate-slide-in-left">
+        <motion.div 
+          initial={{ x: -20, opacity: 0 }}
+          animate={{ x: 0, opacity: 1 }}
+          transition={{ duration: 0.5, delay: 0.1 }}
+          className="w-full md:w-1/4 space-y-4"
+        >
           <div className="glass-panel p-4 md:p-6 rounded-xl border border-yellow-500/20 sticky top-20 max-h-[calc(100vh-100px)] overflow-y-auto custom-scrollbar">
             <h2 className="text-xl font-bold text-white mb-4 flex items-center gap-2">
               <Trophy className="w-5 h-5 text-yellow-400" /> Game List
@@ -142,6 +151,7 @@ export const Casino: React.FC = () => {
                     const currentMinute = now.getMinutes();
                     let isLive = false;
                     let statusText = '';
+                    const isSpecial = game.hour_slot === 20;
                     
                     if (game.hour_slot === currentHour) {
                         if (currentMinute < 50) {
@@ -164,16 +174,17 @@ export const Casino: React.FC = () => {
                     disabled={!isLive} 
                     className={`w-full p-3 rounded-lg flex justify-between items-center transition-all transform hover:translate-x-1 ${
                         selectedGameId === game.id 
-                        ? 'bg-gradient-to-r from-blue-500/20 to-blue-600/20 border border-blue-500/50' 
-                        : isLive ? 'bg-slate-800 hover:bg-slate-700 border border-transparent' : 'bg-slate-900 border border-transparent opacity-60 cursor-not-allowed'
+                        ? (isSpecial ? 'bg-gradient-to-r from-purple-600/30 to-purple-800/30 border border-purple-500/50 shadow-[0_0_15px_rgba(168,85,247,0.3)]' : 'bg-gradient-to-r from-blue-500/20 to-blue-600/20 border border-blue-500/50')
+                        : isLive ? (isSpecial ? 'bg-purple-900/40 hover:bg-purple-800/50 border border-purple-500/20' : 'bg-slate-800 hover:bg-slate-700 border border-transparent') : 'bg-slate-900 border border-transparent opacity-60 cursor-not-allowed'
                     }`}
                     >
                     <div className="text-left">
-                        <p className={`font-bold text-sm ${selectedGameId === game.id ? 'text-blue-400' : 'text-white'}`}>
+                        <p className={`font-bold text-sm flex items-center gap-1 ${selectedGameId === game.id ? (isSpecial ? 'text-purple-300' : 'text-blue-400') : (isSpecial ? 'text-purple-200' : 'text-white')}`}>
                         {game.name}
+                        {isSpecial && <Crown className="w-3 h-3 text-yellow-400" />}
                         </p>
-                        <p className="text-[10px] text-slate-400">
-                        Hour Slot: {game.hour_slot}
+                        <p className={`text-[10px] ${isSpecial ? 'text-purple-300/70' : 'text-slate-400'}`}>
+                        Timing: {formatHourSlot(game.hour_slot)}
                         </p>
                     </div>
                     <div className="text-right">
@@ -194,21 +205,27 @@ export const Casino: React.FC = () => {
                 </div>
             </div>
           </div>
-        </div>
+        </motion.div>
 
-        <div className="w-full md:w-3/4 animate-slide-in-right">
+        <motion.div 
+          initial={{ x: 20, opacity: 0 }}
+          animate={{ x: 0, opacity: 1 }}
+          transition={{ duration: 0.5, delay: 0.2 }}
+          className="w-full md:w-3/4"
+        >
            {selectedGame ? (
-               <div className={`rounded-xl border relative transition-all duration-500 overflow-hidden ${isJackpot ? 'glass-panel border-purple-500/40 bg-slate-900/80 shadow-[0_0_50px_rgba(168,85,247,0.1)]' : 'glass-panel border-white/10'}`}>
+               <div className={`rounded-xl border relative transition-all duration-500 overflow-hidden ${isJackpot || selectedGame.hour_slot === 20 ? 'glass-panel border-purple-500/40 bg-slate-900/80 shadow-[0_0_50px_rgba(168,85,247,0.1)]' : 'glass-panel border-white/10'}`}>
                  
                  {/* Header & Tabs */}
                  <div className="p-4 md:p-6 border-b border-white/10">
                      <div className="flex flex-col md:flex-row justify-between md:items-center gap-4 mb-4">
                         <div>
                             <h2 className="text-2xl font-bold text-white serif flex items-center gap-2">
-                                <span className={isJackpot ? "text-transparent bg-clip-text bg-gradient-to-r from-purple-400 to-pink-400" : "text-yellow-400"}>{selectedGame.name}</span>
+                                <span className={isJackpot || selectedGame.hour_slot === 20 ? "text-transparent bg-clip-text bg-gradient-to-r from-purple-400 to-pink-400" : "text-yellow-400"}>{selectedGame.name}</span>
+                                {selectedGame.hour_slot === 20 && <Crown className="w-6 h-6 text-yellow-400 animate-pulse" />}
                             </h2>
-                            <div className="text-xs bg-yellow-500/10 text-yellow-400 px-2 py-1 rounded w-fit border border-yellow-500/20 mt-1">
-                                Hour Slot: {selectedGame.hour_slot}
+                            <div className={`text-xs px-2 py-1 rounded w-fit border mt-1 ${selectedGame.hour_slot === 20 ? 'bg-purple-500/10 text-purple-300 border-purple-500/30' : 'bg-yellow-500/10 text-yellow-400 border-yellow-500/20'}`}>
+                                Timing: {formatHourSlot(selectedGame.hour_slot)}
                             </div>
                         </div>
                         <div className="flex gap-2 bg-slate-900/50 p-1 rounded-lg border border-white/5">
@@ -332,7 +349,7 @@ export const Casino: React.FC = () => {
                                                  </td>
                                                  <td className="p-4 text-center">
                                                      <span className={`text-xl font-black px-3 py-1 rounded shadow-lg ${isJackpot ? 'text-purple-400 bg-purple-500/10 border border-purple-500/30' : 'text-yellow-400 bg-yellow-500/10 border border-yellow-500/30'}`}>
-                                                         {res.result}
+                                                         {res.result !== undefined && res.result !== null && res.result !== '' ? String(res.result).padStart(2, '0') : '----'}
                                                      </span>
                                                  </td>
                                                  <td className="p-4 text-right text-xs text-slate-500">
@@ -348,12 +365,16 @@ export const Casino: React.FC = () => {
                  )}
             </div>
            ) : (
-               <div className="text-center text-slate-500 py-20 glass-panel rounded-xl animate-fade-in">
+               <motion.div 
+                 initial={{ opacity: 0 }}
+                 animate={{ opacity: 1 }}
+                 className="text-center text-slate-500 py-20 glass-panel rounded-xl"
+               >
                    Select a game to start betting
-               </div>
+               </motion.div>
            )}
-        </div>
+        </motion.div>
       </div>
-    </div>
+    </motion.div>
   );
 };

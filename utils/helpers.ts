@@ -5,6 +5,13 @@ import { Timestamp, DocumentReference, GeoPoint } from 'firebase/firestore';
  * Deeply sanitizes data to ensure it is JSON-serializable.
  * Converts Firestore Timestamps to millis, References to paths, and removes circular deps.
  */
+export const formatHourSlot = (hour: number | undefined | null) => {
+  if (hour === undefined || hour === null) return '';
+  const ampm = hour >= 12 ? 'PM' : 'AM';
+  const displayHour = hour % 12 || 12;
+  return `${displayHour}:00 ${ampm}`;
+};
+
 export const sanitize = (data: any, visited = new WeakSet<any>()): any => {
   if (data === null || data === undefined) return null;
   

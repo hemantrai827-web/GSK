@@ -2,20 +2,31 @@
 import React, { useState, useMemo, useEffect } from 'react';
 import { useApp } from '../context/AppContext';
 import { Button } from '../components/ui/Button';
-import { Shield, FileText, LayoutGrid, Users, Briefcase, AlertTriangle, History, BarChart3, Wallet, Save, RefreshCw, Trophy, Clock, Search, Send, CheckCircle, XCircle, Loader2, Filter, Dice5, Lock, Edit3, User as UserIcon } from 'lucide-react';
+import { Shield, FileText, LayoutGrid, Users, Briefcase, AlertTriangle, History, BarChart3, Wallet, Save, RefreshCw, Trophy, Clock, Search, Send, CheckCircle, XCircle, Loader2, Filter, Dice5, Lock, Edit3, User as UserIcon, Crown } from 'lucide-react';
 import { User, Transaction } from '../types';
-import { collection, onSnapshot, query, updateDoc, doc, serverTimestamp } from 'firebase/firestore';
+import { collection, onSnapshot, query, updateDoc, doc, serverTimestamp, setDoc, orderBy } from 'firebase/firestore';
 import { db } from '../firebase';
-import { sanitize } from '../utils/helpers';
+import { sanitize, formatHourSlot } from '../utils/helpers';
 
 export const AdminPanel: React.FC = () => {
-  const { user, transactions, depositRequests, bets, processTransaction, approveDeposit, rejectDeposit, createStaffAccount, adminAddFunds, showNotification, findUserByIdentifier, renewAccess, qrCodeUrl } = useApp();
+  const { user, transactions, depositRequests, withdrawRequests, bets, processTransaction, approveDeposit, rejectDeposit, approveWithdraw, rejectWithdraw, createStaffAccount, adminAddFunds, showNotification, findUserByIdentifier, renewAccess, qrCodeUrl } = useApp();
   
-  const [activeTab, setActiveTab] = useState<'dashboard' | 'results' | 'funds' | 'users' | 'requests' | 'staff' | 'live_bets'>('results');
+  const [activeTab, setActiveTab] = useState<'dashboard' | 'results' | 'funds' | 'users' | 'requests' | 'staff' | 'live_bets' | 'agent_chats'>('results');
   const [localUsers, setLocalUsers] = useState<User[]>([]);
   const [loadingUsers, setLoadingUsers] = useState(false);
   const [games, setGames] = useState<any[]>([]);
   const [gameInputs, setGameInputs] = useState<Record<string, string>>({});
+  const [adminChats, setAdminChats] = useState<any[]>([]);
+  const [agentPayments, setAgentPayments] = useState<any[]>([]);
+  const adminChatEndRef = React.useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    if (activeTab === 'agent_chats') {
+      setTimeout(() => {
+        adminChatEndRef.current?.scrollIntoView({ behavior: 'smooth' });
+      }, 100);
+    }
+  }, [adminChats, activeTab]);
   
   // Funds / Transfer State
   const [quickTransferQuery, setQuickTransferQuery] = useState('');
@@ -65,6 +76,63 @@ export const AdminPanel: React.FC = () => {
     }
   }, [user?.role]);
 
+  useEffect(() => {
+    if (user?.role === 'ADMIN' && activeTab === 'agent_chats') {
+        try {
+            const q = query(collection(db, 'agent_chats'), orderBy('timestamp', 'asc'));
+            const unsub = onSnapshot(q, (snap) => {
+                const list: any[] = [];
+                const now = Date.now();
+                const twentyFourHours = 24 * 60 * 60 * 1000;
+
+                snap.docs.forEach(d => {
+                    const data = d.data();
+                    const timestamp = data.timestamp?.toMillis ? data.timestamp.toMillis() : (data.timestamp || 0);
+                    
+                    // Client-side cleanup simulation (In production, use Cloud Functions)
+                    if (now - timestamp > twentyFourHours) {
+                        // We could delete it here, but it's better to just filter it out
+                        // and let a real Cloud Function handle deletion to avoid multiple clients deleting
+                    } else {
+                        list.push({
+                            id: d.id,
+                            senderId: data.senderId,
+                            senderName: data.senderName,
+                            message: data.message,
+                            timestamp: timestamp
+                        });
+                    }
+                });
+                setAdminChats(list);
+            }, (error) => {
+                console.error("Error fetching agent chats:", error);
+                showNotification("Failed to load agent chats", "error");
+            });
+            return () => unsub();
+        } catch (error) {
+            console.error("Error setting up agent chats listener:", error);
+        }
+    }
+  }, [user?.role, activeTab]);
+
+  useEffect(() => {
+    if (user?.role === 'ADMIN' && activeTab === 'agent_payments') {
+        try {
+            const q = query(collection(db, 'agent_payments'), orderBy('timestamp', 'desc'));
+            const unsub = onSnapshot(q, (snap) => {
+                const list = snap.docs.map(d => ({ id: d.id, ...d.data() }));
+                setAgentPayments(list);
+            }, (error) => {
+                console.error("Error fetching agent payments:", error);
+                showNotification("Failed to load agent payments", "error");
+            });
+            return () => unsub();
+        } catch (error) {
+            console.error("Error setting up agent payments listener:", error);
+        }
+    }
+  }, [user?.role, activeTab]);
+
   // Debounced User Search for Funds - This fixes "User ka no dalne se name ana chaiye"
   useEffect(() => {
       if (!quickTransferQuery || quickTransferQuery.length < 3) {
@@ -88,6 +156,45 @@ export const AdminPanel: React.FC = () => {
       return () => clearTimeout(timer);
   }, [quickTransferQuery, findUserByIdentifier]);
 
+  const analysisData = useMemo(() => {
+      const game = games.find(g => g.id === selectedAnalysisGameId);
+
+      const activeBets = bets.filter(b => {
+          if (b.gameId !== selectedAnalysisGameId) return false;
+          if (b.status !== 'PENDING') return false;
+          return true;
+      });
+
+      const aggregation: Record<string, { totalAmount: number, uniquePlayers: Set<string> }> = {};
+      const rangeStart = 0;
+      const rangeEnd = 99;
+
+      for(let i = rangeStart; i <= rangeEnd; i++) {
+          const key = i.toString().padStart(2, '0');
+          aggregation[key] = { totalAmount: 0, uniquePlayers: new Set() };
+      }
+      
+      let totalGameLoad = 0;
+      activeBets.forEach(bet => {
+          const num = bet.selection;
+          if (aggregation[num]) {
+              aggregation[num].totalAmount += bet.amount;
+              aggregation[num].uniquePlayers.add(bet.userId);
+              totalGameLoad += bet.amount;
+          }
+      });
+
+      const gridData = Object.entries(aggregation)
+        .map(([num, data]) => ({
+            number: num,
+            totalAmount: data.totalAmount,
+            playerCount: data.uniquePlayers.size
+        }))
+        .sort((a, b) => parseInt(a.number) - parseInt(b.number));
+
+      return { gridData, totalGameLoad };
+  }, [bets, selectedAnalysisGameId, games]);
+
   const allUsers = localUsers; 
 
   if (!user || (user.role !== 'ADMIN' && user.role !== 'AGENT' && user.role !== 'SUB_AGENT')) {
@@ -102,7 +209,7 @@ export const AdminPanel: React.FC = () => {
   let timeRemaining = '';
 
   if (isAgent) {
-      if (user.access_expires_at) {
+      if (user.access_expires_at !== undefined && user.access_expires_at !== null) {
           agentExpiryTime = user.access_expires_at.toDate ? user.access_expires_at.toDate().getTime() : new Date(user.access_expires_at).getTime();
           const now = Date.now();
           if (now > agentExpiryTime) {
@@ -164,6 +271,21 @@ export const AdminPanel: React.FC = () => {
               result_number: newValue,
               result_time: serverTimestamp()
           });
+
+          // Also update the gameHistory collection for the chart
+          const today = new Date();
+          const dateStr = today.toISOString().split('T')[0]; // YYYY-MM-DD
+          const historyId = `${game.id}_${dateStr}`;
+          
+          await setDoc(doc(db, "gameHistory", historyId), {
+              gameId: game.id,
+              gameName: game.name || 'Unknown Game',
+              date: dateStr,
+              hour_slot: game.hour_slot !== undefined ? game.hour_slot : null,
+              result: newValue,
+              createdAt: serverTimestamp()
+          }, { merge: true });
+
           showNotification("Result Saved!", 'success');
           setGameInputs(prev => ({ ...prev, [game.id]: '' }));
       } catch (error: any) {
@@ -247,6 +369,19 @@ export const AdminPanel: React.FC = () => {
               } else {
                   await rejectDeposit(tx.id);
               }
+          } else if (tx.isWithdrawRequest) {
+              if (action === 'APPROVE') {
+                  await approveWithdraw(tx.id);
+              } else {
+                  await rejectWithdraw(tx.id);
+              }
+          } else if (tx.type === 'AGENT_SUBSCRIPTION') {
+              if (action === 'APPROVE') {
+                  await processTransaction(tx.id, 'COMPLETED');
+                  await renewAccess(tx.userId);
+              } else {
+                  await processTransaction(tx.id, 'REJECTED');
+              }
           } else {
               await processTransaction(tx.id, action);
           }
@@ -258,45 +393,6 @@ export const AdminPanel: React.FC = () => {
           setProcessingId(null);
       }
   };
-
-  const analysisData = useMemo(() => {
-      const game = games.find(g => g.id === selectedAnalysisGameId);
-
-      const activeBets = bets.filter(b => {
-          if (b.gameId !== selectedAnalysisGameId) return false;
-          if (b.status !== 'PENDING') return false;
-          return true;
-      });
-
-      const aggregation: Record<string, { totalAmount: number, uniquePlayers: Set<string> }> = {};
-      const rangeStart = 0;
-      const rangeEnd = 99;
-
-      for(let i = rangeStart; i <= rangeEnd; i++) {
-          const key = i.toString().padStart(2, '0');
-          aggregation[key] = { totalAmount: 0, uniquePlayers: new Set() };
-      }
-      
-      let totalGameLoad = 0;
-      activeBets.forEach(bet => {
-          const num = bet.selection;
-          if (aggregation[num]) {
-              aggregation[num].totalAmount += bet.amount;
-              aggregation[num].uniquePlayers.add(bet.userId);
-              totalGameLoad += bet.amount;
-          }
-      });
-
-      const gridData = Object.entries(aggregation)
-        .map(([num, data]) => ({
-            number: num,
-            totalAmount: data.totalAmount,
-            playerCount: data.uniquePlayers.size
-        }))
-        .sort((a, b) => parseInt(a.number) - parseInt(b.number));
-
-      return { gridData, totalGameLoad };
-  }, [bets, selectedAnalysisGameId, games]);
 
   const filteredUsers = allUsers.filter(u => u.role === 'USER' && (u.username.toLowerCase().includes(userSearch.toLowerCase()) || u.mobile?.includes(userSearch) || u.email?.toLowerCase().includes(userSearch.toLowerCase())));
   
@@ -315,7 +411,20 @@ export const AdminPanel: React.FC = () => {
           screenshotUrl: d.screenshotUrl,
           isDepositRequest: true
       })),
-      ...transactions.filter(t => t.type === 'WITHDRAW')
+      ...withdrawRequests.map(w => ({
+          id: w.id,
+          userId: w.userId,
+          userName: w.userName,
+          userMobile: w.userMobile,
+          type: 'WITHDRAW' as const,
+          amount: w.amount,
+          status: w.status === 'pending' ? 'PENDING' : w.status === 'approved' ? 'COMPLETED' : 'REJECTED',
+          timestamp: w.timestamp,
+          description: w.paymentDetails || 'Withdrawal Request',
+          bankDetailsSnapshot: w.bankDetailsSnapshot,
+          isWithdrawRequest: true
+      })),
+      ...transactions.filter(t => t.type === 'AGENT_SUBSCRIPTION')
   ].sort((a, b) => b.timestamp - a.timestamp);
 
   const filteredRequests = requestTransactions.filter(t => {
@@ -354,6 +463,8 @@ export const AdminPanel: React.FC = () => {
                 {canViewStats && <Button variant={activeTab === 'live_bets' ? 'gold' : 'secondary'} size="sm" onClick={() => setActiveTab('live_bets')}><LayoutGrid className="w-4 h-4 mr-1"/> Live Bets</Button>}
                 {canViewUsers && <Button variant={activeTab === 'users' ? 'gold' : 'secondary'} size="sm" onClick={() => setActiveTab('users')}><Users className="w-4 h-4 mr-1"/> Users</Button>}
                 {canViewStaff && <Button variant={activeTab === 'staff' ? 'gold' : 'secondary'} size="sm" onClick={() => setActiveTab('staff')}><Briefcase className="w-4 h-4 mr-1"/> Staff</Button>}
+                {isAdmin && <Button variant={activeTab === 'agent_chats' ? 'gold' : 'secondary'} size="sm" onClick={() => setActiveTab('agent_chats')}><Send className="w-4 h-4 mr-1"/> Agent Chats</Button>}
+                {isAdmin && <Button variant={activeTab === 'agent_payments' ? 'gold' : 'secondary'} size="sm" onClick={() => setActiveTab('agent_payments')}><Wallet className="w-4 h-4 mr-1"/> Agent Payments</Button>}
             </div>
         </div>
 
@@ -408,14 +519,14 @@ export const AdminPanel: React.FC = () => {
 
                                     return (
                                         <tr key={tx.id} className="hover:bg-slate-800/30">
-                                            <td className="p-4"><span className={`px-2 py-1 rounded text-xs font-bold ${tx.type === 'DEPOSIT' ? 'bg-green-500/20 text-green-400' : 'bg-red-500/20 text-red-400'}`}>{tx.type}</span></td>
+                                            <td className="p-4"><span className={`px-2 py-1 rounded text-xs font-bold ${tx.type === 'DEPOSIT' ? 'bg-green-500/20 text-green-400' : tx.type === 'AGENT_SUBSCRIPTION' ? 'bg-purple-500/20 text-purple-400' : tx.type === 'WITHDRAW' ? 'bg-blue-500/20 text-blue-400' : 'bg-red-500/20 text-red-400'}`}>{tx.type === 'AGENT_SUBSCRIPTION' ? 'SUBSCRIPTION' : tx.type}</span></td>
                                             <td className="p-4">
                                                 <div className="font-bold text-white">{displayUser}</div>
                                                 <div className="text-xs text-slate-400">{displayMobile}</div>
                                             </td>
                                             <td className="p-4 font-mono font-bold text-white">₹{tx.amount}</td>
                                             <td className="p-4 text-xs text-slate-300">
-                                                {tx.type === 'DEPOSIT' ? (
+                                                {tx.type === 'DEPOSIT' || tx.type === 'AGENT_SUBSCRIPTION' ? (
                                                     <div className="space-y-1">
                                                         <div>UTR: <span className="text-yellow-400 select-all font-mono text-sm font-bold">{tx.utr}</span></div>
                                                         {tx.screenshotUrl && (
@@ -546,14 +657,19 @@ export const AdminPanel: React.FC = () => {
                     <div className="absolute top-0 right-0 bg-green-900/30 px-3 py-1 rounded-bl-lg text-[10px] text-green-200 font-bold uppercase">Firestore Games</div>
                     <h3 className="text-xl font-bold text-white mb-4 flex items-center gap-2"><Trophy className="w-5 h-5 text-green-400"/> Games Results</h3>
                     <div className="space-y-4 max-h-[600px] overflow-y-auto custom-scrollbar pr-2">
-                        {games && games.length > 0 ? games.map(game => (
-                            <div key={game.id} className="bg-slate-900/50 p-4 rounded-lg border border-slate-700 hover:border-green-500/50 transition-colors flex flex-col md:flex-row justify-between items-start md:items-center gap-4">
+                        {games && games.length > 0 ? games.map(game => {
+                            const isSpecial = game.hour_slot === 20;
+                            return (
+                            <div key={game.id} className={`p-4 rounded-lg border transition-colors flex flex-col md:flex-row justify-between items-start md:items-center gap-4 ${isSpecial ? 'bg-purple-900/30 border-purple-500/50 hover:border-purple-400' : 'bg-slate-900/50 border-slate-700 hover:border-green-500/50'}`}>
                                 <div>
-                                    <span className="font-bold text-white text-sm block">{game.name || 'Unnamed Game'}</span>
-                                    <span className="text-xs text-slate-400 font-mono">Hour Slot: {game.hour_slot}</span>
-                                    {game.result_number && (
+                                    <span className={`font-bold text-sm flex items-center gap-1 ${isSpecial ? 'text-purple-300' : 'text-white'}`}>
+                                        {game.name || 'Unnamed Game'}
+                                        {isSpecial && <Crown className="w-4 h-4 text-yellow-400" />}
+                                    </span>
+                                    <span className={`text-xs font-mono ${isSpecial ? 'text-purple-300/70' : 'text-slate-400'}`}>Timing: {formatHourSlot(game.hour_slot)}</span>
+                                    {game.result_number !== undefined && game.result_number !== null && game.result_number !== '' && (
                                         <div className="mt-1">
-                                            <span className="text-xs text-green-400 font-bold bg-green-900/30 px-2 py-1 rounded">Current Result: {game.result_number}</span>
+                                            <span className={`text-xs font-bold px-2 py-1 rounded ${isSpecial ? 'text-purple-300 bg-purple-900/50' : 'text-green-400 bg-green-900/30'}`}>Current Result: {String(game.result_number).padStart(2, '0')}</span>
                                         </div>
                                     )}
                                 </div>
@@ -575,7 +691,7 @@ export const AdminPanel: React.FC = () => {
                                     )}
                                 </div>
                             </div>
-                        )) : (
+                        )}) : (
                             <div className="text-center text-slate-500 py-4">No games found in Firestore.</div>
                         )}
                     </div>
@@ -719,6 +835,86 @@ export const AdminPanel: React.FC = () => {
                  </div>
              </div>
         )}
+         {activeTab === 'agent_chats' && isAdmin && (
+             <div className="glass-panel p-6 rounded-xl border border-white/10 max-w-4xl mx-auto">
+                 <h3 className="text-xl font-bold text-white mb-6 flex items-center gap-2"><Send className="w-5 h-5"/> Global Agent Chats</h3>
+                 <div className="bg-slate-900/50 rounded-xl border border-slate-700 h-[600px] flex flex-col">
+                     <div className="flex-1 overflow-y-auto p-4 space-y-4 custom-scrollbar">
+                         {adminChats.length === 0 ? (
+                             <div className="h-full flex items-center justify-center text-slate-500 text-sm italic">
+                                 No messages in the last 24 hours.
+                             </div>
+                         ) : (
+                             adminChats.map((chat) => (
+                                 <div key={chat.id} className="flex flex-col items-start">
+                                     <div className="flex items-baseline gap-2 mb-1 px-1">
+                                         <span className="text-xs font-bold text-purple-400">{chat.senderName}</span>
+                                         <span className="text-[10px] text-slate-500">{new Date(chat.timestamp).toLocaleString()}</span>
+                                     </div>
+                                     <div className="max-w-[80%] px-4 py-2 rounded-2xl bg-slate-800 text-slate-200 border border-slate-700 rounded-tl-sm">
+                                         <p className="text-sm break-words">{chat.message}</p>
+                                     </div>
+                                 </div>
+                             ))
+                         )}
+                         <div ref={adminChatEndRef} />
+                     </div>
+                 </div>
+             </div>
+         )}
+         {activeTab === 'agent_payments' && isAdmin && (
+             <div className="glass-panel p-6 rounded-xl border border-white/10 max-w-4xl mx-auto">
+                 <h3 className="text-xl font-bold text-white mb-6 flex items-center gap-2"><Wallet className="w-5 h-5"/> Agent Payments</h3>
+                 <div className="space-y-4">
+                     {agentPayments.length === 0 ? (
+                         <div className="text-center text-slate-500 py-8">No agent payments found.</div>
+                     ) : (
+                         agentPayments.map(payment => (
+                             <div key={payment.id} className="bg-slate-900/50 p-4 rounded-xl border border-slate-700 flex flex-col md:flex-row justify-between items-start md:items-center gap-4">
+                                 <div>
+                                     <p className="text-white font-bold">Agent ID: {payment.agentId}</p>
+                                     <p className="text-sm text-slate-400">UTR: {payment.utr}</p>
+                                     <p className="text-sm text-slate-400">Amount: ₹{payment.amount}</p>
+                                     <p className="text-xs text-slate-500">{new Date(payment.timestamp).toLocaleString()}</p>
+                                 </div>
+                                 <div className="flex items-center gap-4">
+                                     {payment.screenshotUrl && (
+                                         <a href={payment.screenshotUrl} target="_blank" rel="noreferrer" className="text-blue-400 hover:underline text-sm">View Screenshot</a>
+                                     )}
+                                     <div className="flex gap-2">
+                                         {payment.status === 'pending' ? (
+                                             <>
+                                                 <Button size="sm" variant="gold" onClick={async () => {
+                                                     try {
+                                                         await updateDoc(doc(db, 'agent_payments', payment.id), { status: 'approved' });
+                                                         await renewAccess(payment.agentId);
+                                                         showNotification('Payment approved and access renewed', 'success');
+                                                     } catch (e: any) {
+                                                         showNotification(e.message, 'error');
+                                                     }
+                                                 }}>Approve</Button>
+                                                 <Button size="sm" variant="danger" onClick={async () => {
+                                                     try {
+                                                         await updateDoc(doc(db, 'agent_payments', payment.id), { status: 'rejected' });
+                                                         showNotification('Payment rejected', 'success');
+                                                     } catch (e: any) {
+                                                         showNotification(e.message, 'error');
+                                                     }
+                                                 }}>Reject</Button>
+                                             </>
+                                         ) : (
+                                             <span className={`px-2 py-1 rounded text-xs font-bold ${payment.status === 'approved' ? 'bg-green-500/20 text-green-400' : 'bg-red-500/20 text-red-400'}`}>
+                                                 {payment.status.toUpperCase()}
+                                             </span>
+                                         )}
+                                     </div>
+                                 </div>
+                             </div>
+                         ))
+                     )}
+                 </div>
+             </div>
+         )}
     </div>
   );
 };

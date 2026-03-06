@@ -26,7 +26,7 @@ const PaymentMethod = ({ icon: Icon, label, selected, onClick }: { icon: any, la
 );
 
 export const Wallet: React.FC = () => {
-  const { user, walletBalance, transactions, depositRequests, deposit, withdraw, referUser, requestSubAgent, bets, showNotification, uploadProof } = useApp();
+  const { user, walletBalance, transactions, depositRequests, withdrawRequests, deposit, withdraw, referUser, requestSubAgent, bets, showNotification, uploadProof } = useApp();
   const [activeTab, setActiveTab] = useState<'deposit' | 'withdraw' | 'deposit_history' | 'withdraw_history' | 'bet_history' | 'referral_history' | 'refer'>('deposit');
   
   // Deposit State
@@ -46,6 +46,7 @@ export const Wallet: React.FC = () => {
   const [bankName, setBankName] = useState('');
 
   const [referralCodeInput, setReferralCodeInput] = useState('');
+  const [isChangingBank, setIsChangingBank] = useState(false);
   const [isSubmitting, setIsSubmitting] = useState(false);
 
   // VPA Config - In real app, fetch from backend config
@@ -114,7 +115,7 @@ export const Wallet: React.FC = () => {
 
           let success = false;
           if (withdrawMethod === 'Bank') {
-              if (!user?.bankDetails) {
+              if (!user?.bankDetails || isChangingBank) {
                   if (!bankHolder || !bankAccount || !bankIfsc) throw new Error("Fill all bank details");
                   const newBankDetails = { holderName: bankHolder, accountNumber: bankAccount, ifsc: bankIfsc, bankName };
                   success = await withdraw(val, `Bank Transfer: ${bankAccount}`, newBankDetails);
@@ -150,7 +151,13 @@ export const Wallet: React.FC = () => {
       amount: d.amount,
       status: d.status === 'pending' ? 'PENDING' : d.status === 'approved' ? 'COMPLETED' : 'REJECTED'
   })).sort((a,b) => b.timestamp - a.timestamp);
-  const myWithdrawals = transactions.filter(t => t.userId === user?.id && t.type === 'WITHDRAW').sort((a,b) => b.timestamp - a.timestamp);
+  const myWithdrawals = withdrawRequests.filter(w => w.userId === user?.id).map(w => ({
+      id: w.id,
+      timestamp: w.timestamp,
+      description: w.paymentDetails || 'Withdrawal Request',
+      amount: w.amount,
+      status: w.status === 'pending' ? 'PENDING' : w.status === 'approved' ? 'COMPLETED' : 'REJECTED'
+  })).sort((a,b) => b.timestamp - a.timestamp);
   const myReferrals = transactions.filter(t => t.userId === user?.id && t.type === 'REFERRAL').sort((a,b) => b.timestamp - a.timestamp);
 
   const getStatusBadge = (status: string) => {
@@ -336,14 +343,14 @@ export const Wallet: React.FC = () => {
 
                  {withdrawMethod === 'Bank' && (
                      <div className="space-y-3 bg-slate-900/50 p-4 rounded-xl border border-slate-700 animate-fade-in">
-                         {user?.bankDetails ? (
+                         {user?.bankDetails && !isChangingBank ? (
                              <div className="text-sm flex justify-between items-center">
                                  <div>
                                      <p className="text-green-400 font-bold mb-1">Saved Account</p>
                                      <p className="text-white font-mono">{user.bankDetails.holderName}</p>
                                      <p className="text-slate-500 text-xs">XXXX{user.bankDetails.accountNumber.slice(-4)}</p>
                                  </div>
-                                 <button type="button" onClick={() => {}} className="text-xs text-yellow-500 underline">Change</button>
+                                 <button type="button" onClick={() => setIsChangingBank(true)} className="text-xs text-yellow-500 underline">Change</button>
                              </div>
                          ) : (
                              <>
@@ -351,6 +358,9 @@ export const Wallet: React.FC = () => {
                                 <input type="text" value={bankAccount} onChange={(e) => setBankAccount(e.target.value)} className="w-full bg-slate-800 border border-slate-600 rounded p-2 text-white text-sm outline-none focus:border-yellow-500" placeholder="Account Number" required />
                                 <input type="text" value={bankIfsc} onChange={(e) => setBankIfsc(e.target.value.toUpperCase())} className="w-full bg-slate-800 border border-slate-600 rounded p-2 text-white text-sm outline-none focus:border-yellow-500" placeholder="IFSC Code" required />
                                 <input type="text" value={bankName} onChange={(e) => setBankName(e.target.value)} className="w-full bg-slate-800 border border-slate-600 rounded p-2 text-white text-sm outline-none focus:border-yellow-500" placeholder="Bank Name" />
+                                {user?.bankDetails && (
+                                    <button type="button" onClick={() => setIsChangingBank(false)} className="text-xs text-slate-400 underline mt-2 block">Cancel Change</button>
+                                )}
                              </>
                          )}
                      </div>

@@ -1,7 +1,7 @@
 
 import React from 'react';
 import { useApp } from '../context/AppContext';
-import { Coins, Wallet, Menu, UserCircle, LogOut, LayoutDashboard, Crown, Gamepad2, LogIn, Gem } from 'lucide-react';
+import { Coins, Wallet, Menu, UserCircle, LogOut, LayoutDashboard, Crown, Gamepad2, LogIn, Gem, Clock } from 'lucide-react';
 import { Button } from './ui/Button';
 
 interface NavbarProps {
@@ -13,7 +13,7 @@ export const Navbar: React.FC<NavbarProps> = ({ activeTab, setActiveTab }) => {
   const { user, walletBalance, logout } = useApp();
   const [isMobileMenuOpen, setIsMobileMenuOpen] = React.useState(false);
 
-  const navItems = [
+  let navItems = [
     { id: 'home', label: 'Results', icon: LayoutDashboard },
     { id: 'casino', label: 'Matka Play', icon: Crown },
     { id: 'games', label: 'Mini Games', icon: Gamepad2 },
@@ -21,8 +21,13 @@ export const Navbar: React.FC<NavbarProps> = ({ activeTab, setActiveTab }) => {
     { id: 'wallet', label: 'Wallet', icon: Wallet },
   ];
 
-  if (user?.role === 'ADMIN' || user?.role === 'AGENT') {
+  if (user?.role === 'ADMIN') {
     navItems.push({ id: 'admin', label: 'Control Panel', icon: UserCircle });
+  } else if (user?.role === 'AGENT') {
+    navItems = [
+      { id: 'agent', label: 'Agent Panel', icon: UserCircle },
+      { id: 'subscription', label: 'Subscription', icon: Wallet }
+    ];
   }
 
   const handleLogout = () => {
@@ -30,6 +35,25 @@ export const Navbar: React.FC<NavbarProps> = ({ activeTab, setActiveTab }) => {
     setActiveTab('home');
     setIsMobileMenuOpen(false);
   };
+
+  const getAgentRemainingTime = () => {
+    if (user?.role !== 'AGENT') return null;
+    if (user.access_expires_at === undefined || user.access_expires_at === null) return 'Expired';
+    
+    const expiresAt = user.access_expires_at.toDate ? user.access_expires_at.toDate() : new Date(user.access_expires_at);
+    const now = new Date();
+    const diffMs = expiresAt.getTime() - now.getTime();
+    
+    if (diffMs <= 0) return 'Expired';
+    
+    const days = Math.floor(diffMs / (1000 * 60 * 60 * 24));
+    const hours = Math.floor((diffMs % (1000 * 60 * 60 * 24)) / (1000 * 60 * 60));
+    
+    if (days > 0) return `${days}d ${hours}h left`;
+    return `${hours}h left`;
+  };
+
+  const remainingTime = getAgentRemainingTime();
 
   return (
     <nav className="sticky top-0 z-50 bg-slate-900/80 backdrop-blur-md border-b border-white/5 shadow-lg animate-slide-in-top">
@@ -68,6 +92,15 @@ export const Navbar: React.FC<NavbarProps> = ({ activeTab, setActiveTab }) => {
           <div className="hidden md:flex items-center gap-4">
             {user ? (
               <>
+                {remainingTime && (
+                  <div 
+                    onClick={() => setActiveTab('subscription')}
+                    className={`cursor-pointer flex items-center gap-1.5 px-3 py-1.5 rounded-full border text-xs font-bold transition-all duration-300 ${remainingTime === 'Expired' ? 'bg-red-900/50 border-red-500/50 text-red-400 animate-pulse' : 'bg-green-900/30 border-green-500/30 text-green-400 hover:bg-green-900/50'}`}
+                  >
+                    <Clock className="w-3.5 h-3.5" />
+                    {remainingTime}
+                  </div>
+                )}
                 <div className="flex items-center gap-2 bg-slate-950/80 px-4 py-1.5 rounded-full border border-yellow-500/30 shadow-sm hover:border-yellow-500/50 hover:shadow-yellow-500/20 transition-all duration-300 animate-fade-in">
                   <Coins className="w-4 h-4 text-yellow-400 animate-pulse-slow" />
                   <span className="font-bold text-yellow-400 font-mono text-sm">₹ {walletBalance.toLocaleString()}</span>

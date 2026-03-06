@@ -7,9 +7,12 @@ import { Casino } from './pages/Casino';
 import { MiniGames } from './pages/MiniGames';
 import { Wallet } from './pages/Wallet';
 import { AdminPanel } from './pages/Admin';
+import { AgentSubscription } from './components/AgentSubscription';
+import { AgentPanel } from './pages/AgentPanel';
 import { LiveActivityFeed } from './components/LiveActivityFeed';
 import { User, Lock, Mail, ChevronRight, UserPlus, ArrowLeft, Check, KeyRound, Phone, CheckCircle, XCircle, X, AlertTriangle } from 'lucide-react';
 import { Button } from './components/ui/Button';
+import { AnimatePresence, motion } from 'motion/react';
 
 const MainContent: React.FC = () => {
   const { user, login, register, notification, clearNotification } = useApp();
@@ -23,9 +26,6 @@ const MainContent: React.FC = () => {
   const [isRegistering, setIsRegistering] = useState(false);
   const [rememberMe, setRememberMe] = useState(false);
   
-  // Global Notice State
-  const [showNotice, setShowNotice] = useState(false);
-
   // Auto clear notification
   useEffect(() => {
     if (notification) {
@@ -50,8 +50,10 @@ const MainContent: React.FC = () => {
                 // Trigger actual login to restore session
                 const result = await login('USER', e, p);
                 if (result.success) {
-                    if (result.role === 'ADMIN' || result.role === 'AGENT') {
+                    if (result.role === 'ADMIN') {
                         setActiveTab('admin');
+                    } else if (result.role === 'AGENT') {
+                        setActiveTab('agent');
                     }
                     // User stays on 'home' (default) but is now authenticated
                 } else {
@@ -74,21 +76,10 @@ const MainContent: React.FC = () => {
             setIsRegistering(true); // Switch to register mode automatically
             setActiveTab('auth'); // Ensure user is on auth tab
         }
-
-        // 3. Check Global Notice Session
-        const noticeDismissed = sessionStorage.getItem('gsk_result_notice_seen');
-        if (!noticeDismissed) {
-            setShowNotice(true);
-        }
     };
 
     initAuth();
   }, []); // Run once on mount
-
-  const handleCloseNotice = () => {
-      setShowNotice(false);
-      sessionStorage.setItem('gsk_result_notice_seen', 'true');
-  };
 
   const handleLogin = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -109,8 +100,10 @@ const MainContent: React.FC = () => {
     const result = await login('USER', email.trim(), password.trim());
     
     if (result.success) {
-        if (result.role === 'ADMIN' || result.role === 'AGENT') {
+        if (result.role === 'ADMIN') {
             setActiveTab('admin');
+        } else if (result.role === 'AGENT') {
+            setActiveTab('agent');
         } else {
             setActiveTab('home');
         }
@@ -358,18 +351,60 @@ const MainContent: React.FC = () => {
   );
 
   const renderContent = () => {
-    if (activeTab === 'home') return <Home navigateTo={setActiveTab} />;
-    if (activeTab === 'auth') return renderAuth();
-    if (!user) return renderAuth();
-
-    switch (activeTab) {
-      case 'casino': return <Casino />;
-      case 'games': return <MiniGames />;
-      case 'slots': return <MiniGames initialView="SLOTS" />;
-      case 'wallet': return <Wallet />;
-      case 'admin': return <AdminPanel />;
-      default: return <Home navigateTo={setActiveTab} />;
+    let content;
+    
+    // Check if agent access is expired
+    let isAgentExpired = false;
+    if (user?.role === 'AGENT') {
+        if (user.access_expires_at !== undefined && user.access_expires_at !== null) {
+            const expiresAt = user.access_expires_at.toDate ? user.access_expires_at.toDate() : new Date(user.access_expires_at);
+            if (new Date() > expiresAt) {
+                isAgentExpired = true;
+            }
+        } else {
+            isAgentExpired = true; // Newly created agents are expired by default
+        }
     }
+
+    if (activeTab === 'home' && !isAgentExpired) {
+        if (user?.role === 'AGENT') {
+            content = <AgentPanel />;
+        } else {
+            content = <Home navigateTo={setActiveTab} />;
+        }
+    }
+    else if (activeTab === 'auth') content = renderAuth();
+    else if (!user) content = renderAuth();
+    else if (isAgentExpired || activeTab === 'subscription') content = <AgentSubscription />;
+    else {
+      if (user?.role === 'AGENT' && activeTab !== 'agent' && activeTab !== 'subscription') {
+        content = <AgentPanel />;
+      } else {
+        switch (activeTab) {
+          case 'casino': content = <Casino />; break;
+          case 'games': content = <MiniGames />; break;
+          case 'slots': content = <MiniGames initialView="SLOTS" />; break;
+          case 'wallet': content = <Wallet />; break;
+          case 'admin': content = <AdminPanel />; break;
+          case 'agent': content = <AgentPanel />; break;
+          default: content = <Home navigateTo={setActiveTab} />; break;
+        }
+      }
+    }
+
+    return (
+      <AnimatePresence mode="wait">
+        <motion.div
+          key={activeTab}
+          initial={{ opacity: 0, y: 10 }}
+          animate={{ opacity: 1, y: 0 }}
+          exit={{ opacity: 0, y: -10 }}
+          transition={{ duration: 0.3 }}
+        >
+          {content}
+        </motion.div>
+      </AnimatePresence>
+    );
   };
 
   return (
@@ -398,22 +433,6 @@ const MainContent: React.FC = () => {
       </div>
 
       <main className="flex-grow max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8 w-full relative z-10">
-        {/* GLOBAL ALERT BANNER */}
-        {showNotice && (
-          <div className="bg-amber-900/40 border-b border-amber-500/30 backdrop-blur-md p-4 mb-4 rounded-lg relative animate-fade-in border-l-4 border-l-amber-500 shadow-lg shadow-amber-900/20">
-            <div className="max-w-4xl mx-auto flex items-start gap-4">
-               <AlertTriangle className="w-6 h-6 text-amber-400 flex-shrink-0 mt-1 animate-pulse" />
-               <div className="flex-1 text-amber-100 text-sm md:text-base leading-relaxed">
-                  <p className="font-bold text-amber-400 mb-2 uppercase tracking-wide">⚠️ महत्वपूर्ण सूचना:</p>
-                  <p className="mb-2">वेबसाइट में तकनीकी समस्या आने के कारण रिज़ल्ट के कुछ नंबरों में गड़बड़ी पाई गई थी।</p>
-                  <p className="mb-3">इस वजह से पुराने रिज़ल्ट नंबर मान्य नहीं होंगे। आज से जो भी नंबर रिज़ल्ट में खुलेंगे, वही पूरी तरह से मान्य और लागू होंगे।</p>
-                  <p className="text-amber-300/80 text-xs font-bold">आपके भरोसे के लिए धन्यवाद।</p>
-               </div>
-               <button onClick={handleCloseNotice} className="p-1.5 hover:bg-amber-500/20 rounded-full text-amber-400 transition-colors"><X className="w-5 h-5" /></button>
-            </div>
-          </div>
-        )}
-
         {renderContent()}
       </main>
       

@@ -24,6 +24,26 @@ export interface User {
   isSubAgentPending?: boolean;
   bankDetails?: BankDetails;
   access_expires_at?: any; // Timestamp for agent access expiry
+  agent_status?: 'active' | 'expired';
+  agent_expiry?: any;
+}
+
+export interface AgentPayment {
+  id: string;
+  agentId: string;
+  amount: number;
+  utr: string;
+  status: 'pending' | 'approved' | 'rejected';
+  timestamp: any;
+  screenshotUrl?: string;
+}
+
+export interface AgentChat {
+  id: string;
+  senderId: string;
+  senderName: string;
+  message: string;
+  timestamp: any;
 }
 
 export interface BazaarResult {
@@ -74,7 +94,7 @@ export interface Transaction {
   userId: string;
   userName?: string; // Captured at time of request
   userMobile?: string; // Captured at time of request
-  type: 'DEPOSIT' | 'WITHDRAW' | 'BONUS' | 'REFERRAL' | 'GAME_FEE' | 'GAME_WIN' | 'COMMISSION' | 'ADMIN_TRANSFER';
+  type: 'DEPOSIT' | 'WITHDRAW' | 'BONUS' | 'REFERRAL' | 'GAME_FEE' | 'GAME_WIN' | 'COMMISSION' | 'ADMIN_TRANSFER' | 'AGENT_SUBSCRIPTION';
   amount: number;
   status: 'PENDING' | 'COMPLETED' | 'REJECTED';
   timestamp: number;
