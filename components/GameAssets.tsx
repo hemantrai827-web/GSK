@@ -10,6 +10,16 @@ export const GameLogo: React.FC<{ id: string; className?: string }> = ({ id, cla
 
   const renderLogo = () => {
     switch (id) {
+      case 'CHICKEN_ROAD':
+        return (
+          <svg viewBox="0 0 100 100" className={className}>
+             <rect x="0" y="20" width="100" height="60" fill="#334155" />
+             <path d="M0 50 L100 50" stroke="#f8fafc" strokeWidth="4" strokeDasharray="10,10" />
+             <text x="50" y="40" fontSize="30" textAnchor="middle">🐔</text>
+             <text x="20" y="75" fontSize="20" textAnchor="middle">🚗</text>
+             <text x="80" y="75" fontSize="20" textAnchor="middle">🚙</text>
+          </svg>
+        );
       // --- QUICK GAMES ---
       case 'COIN_FLIP':
         return (

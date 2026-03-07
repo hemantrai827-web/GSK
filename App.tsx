@@ -36,6 +36,18 @@ const MainContent: React.FC = () => {
 
   // Load saved credentials, URL Params & Global Notice State on mount
   useEffect(() => {
+    // Load Adsterra Script asynchronously after UI renders
+    const loadAdScript = () => {
+      const script = document.createElement('script');
+      script.src = 'https://pl28863888.effectivegatecpm.com/f6/05/1b/f6051b656c5eb947db1c593a2eddc213.js';
+      script.async = true;
+      script.defer = true;
+      document.body.appendChild(script);
+    };
+    
+    // Delay ad script loading slightly to prioritize main content
+    setTimeout(loadAdScript, 1000);
+
     const initAuth = async () => {
         // 1. Check LocalStorage & Auto Login
         const savedCreds = localStorage.getItem('gsk_creds');

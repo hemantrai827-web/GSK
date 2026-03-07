@@ -47,28 +47,60 @@ export const Home: React.FC<{ navigateTo: (tab: string) => void }> = ({ navigate
   const currentHour = currentTime.getHours();
   const currentMinute = currentTime.getMinutes();
   
-  // Find the latest game that has a result
-  const latestOpenedGame = [...games]
-    .filter(g => g.result_number !== undefined && g.result_number !== null && g.result_number !== '')
-    .sort((a, b) => b.hour_slot - a.hour_slot)[0];
+  const sortedGames = [...(games || [])].sort((a, b) => a.hour_slot - b.hour_slot);
+  const pastGames = sortedGames.filter(g => g.hour_slot <= currentHour);
+  const latestOpenedGame = pastGames.length > 0 ? pastGames[pastGames.length - 1] : (sortedGames.length > 0 ? sortedGames[sortedGames.length - 1] : null);
 
-  const activeGame = latestOpenedGame;
+  let minutesPassed = 0;
+  if (latestOpenedGame) {
+    if (pastGames.length > 0) {
+      minutesPassed = (currentHour - latestOpenedGame.hour_slot) * 60 + currentMinute;
+    } else {
+      minutesPassed = (currentHour + 24 - latestOpenedGame.hour_slot) * 60 + currentMinute;
+    }
+  }
+
+  let activeGame = latestOpenedGame;
+  let isPreviewPhase = false;
+
+  if (minutesPassed >= 50 && latestOpenedGame) {
+    const nextGames = sortedGames.filter(g => g.hour_slot > latestOpenedGame.hour_slot);
+    activeGame = nextGames.length > 0 ? nextGames[0] : sortedGames[0];
+    isPreviewPhase = true;
+  }
 
   let spotlightDisplay = 'WAIT';
-  let spotlightStatus = 'Result Pending';
-  let isWaiting = true;
+  let spotlightStatus = isPreviewPhase ? 'Next Game Preview' : 'Result Pending';
+  let isWaiting = isPreviewPhase;
 
-  if (activeGame) {
+  if (!isPreviewPhase && activeGame) {
     if (activeGame.result_number !== undefined && activeGame.result_number !== null && activeGame.result_number !== '') {
       spotlightDisplay = String(activeGame.result_number).padStart(2, '0');
       spotlightStatus = 'Live Result Declared';
       isWaiting = false;
+    } else {
+      isWaiting = true;
+      spotlightStatus = 'Result Pending';
     }
   }
 
-  const minutesToNextHour = 59 - currentMinute;
-  const secondsToNextHour = 59 - currentTime.getSeconds();
-  const countdown = `${minutesToNextHour.toString().padStart(2, '0')}:${secondsToNextHour.toString().padStart(2, '0')}`;
+  let countdown = '--:--';
+  if (activeGame && isPreviewPhase) {
+    let targetHour = activeGame.hour_slot;
+    if (targetHour <= currentHour) {
+      targetHour += 24;
+    }
+    const totalMinutesToTarget = (targetHour - currentHour - 1) * 60 + (59 - currentMinute);
+    const displayHours = Math.floor(totalMinutesToTarget / 60);
+    const displayMinutes = totalMinutesToTarget % 60;
+    const displaySeconds = 59 - currentTime.getSeconds();
+    
+    if (displayHours > 0) {
+      countdown = `${displayHours.toString().padStart(2, '0')}:${displayMinutes.toString().padStart(2, '0')}:${displaySeconds.toString().padStart(2, '0')}`;
+    } else {
+      countdown = `${displayMinutes.toString().padStart(2, '0')}:${displaySeconds.toString().padStart(2, '0')}`;
+    }
+  }
 
   const getYesterdayResult = (gameId: string) => {
       const yesterday = new Date();
@@ -159,60 +191,50 @@ export const Home: React.FC<{ navigateTo: (tab: string) => void }> = ({ navigate
         </motion.p>
       </header>
 
-      {activeGame ? (
-        <motion.section 
-          initial={{ scale: 0.9, opacity: 0 }}
-          animate={{ scale: 1, opacity: 1 }}
-          transition={{ duration: 0.5, type: "spring" }}
-          className={`relative overflow-hidden rounded-2xl border-2 shadow-[0_0_40px_rgba(234,179,8,0.2)] p-8 text-center group transition-shadow duration-500 ${activeGame.hour_slot === 20 ? 'border-purple-500 bg-gradient-to-b from-purple-900 via-slate-800 to-slate-900 hover:shadow-[0_0_60px_rgba(168,85,247,0.4)]' : 'border-yellow-500 bg-gradient-to-b from-slate-900 via-slate-800 to-slate-900 hover:shadow-[0_0_60px_rgba(234,179,8,0.3)]'}`}
-        >
-           <div className={`absolute top-0 left-0 w-full h-1 bg-gradient-to-r from-transparent to-transparent ${activeGame.hour_slot === 20 ? 'via-purple-500' : 'via-yellow-500'}`}></div>
-           <div className="flex justify-center mb-4">
-              <span className={`px-4 py-1 rounded-full text-white text-xs font-bold uppercase tracking-widest flex items-center gap-2 shadow-lg ${!isWaiting ? 'bg-green-600 animate-bounce-in' : 'bg-red-600 animate-pulse'}`}>
-                 <Megaphone className="w-3 h-3" />
-                 {spotlightStatus}
-              </span>
-           </div>
-           
-           <h2 className="text-3xl md:text-5xl font-bold text-white serif mb-4 drop-shadow-xl animate-scale-in flex items-center justify-center gap-3">
-             {activeGame.name}
-             {activeGame.hour_slot === 20 && <Crown className="w-8 h-8 text-yellow-400 animate-pulse" />}
-           </h2>
+      <motion.section 
+        initial={{ scale: 0.9, opacity: 0 }}
+        animate={{ scale: 1, opacity: 1 }}
+        transition={{ duration: 0.5, type: "spring" }}
+        className={`relative overflow-hidden rounded-2xl border-2 shadow-[0_0_40px_rgba(234,179,8,0.2)] p-8 text-center group transition-shadow duration-500 ${activeGame?.hour_slot === 20 ? 'border-purple-500 bg-gradient-to-b from-purple-900 via-slate-800 to-slate-900 hover:shadow-[0_0_60px_rgba(168,85,247,0.4)]' : 'border-yellow-500 bg-gradient-to-b from-slate-900 via-slate-800 to-slate-900 hover:shadow-[0_0_60px_rgba(234,179,8,0.3)]'}`}
+      >
+         <div className={`absolute top-0 left-0 w-full h-1 bg-gradient-to-r from-transparent to-transparent ${activeGame?.hour_slot === 20 ? 'via-purple-500' : 'via-yellow-500'}`}></div>
+         <div className="flex justify-center mb-4">
+            <span className={`px-4 py-1 rounded-full text-white text-xs font-bold uppercase tracking-widest flex items-center gap-2 shadow-lg ${!isWaiting ? 'bg-green-600 animate-bounce-in' : 'bg-red-600 animate-pulse'}`}>
+               <Megaphone className="w-3 h-3" />
+               {spotlightStatus}
+            </span>
+         </div>
+         
+         <h2 className="text-3xl md:text-5xl font-bold text-white serif mb-4 drop-shadow-xl animate-scale-in flex items-center justify-center gap-3">
+           {activeGame ? activeGame.name : 'Loading Game...'}
+           {activeGame?.hour_slot === 20 && <Crown className="w-8 h-8 text-yellow-400 animate-pulse" />}
+         </h2>
 
-           <div className="py-6">
-              {!isWaiting ? (
-                <div className={`text-8xl md:text-9xl font-mono font-bold text-transparent bg-clip-text drop-shadow-[0_5px_5px_rgba(0,0,0,0.5)] scale-110 transform transition-transform group-hover:scale-115 animate-bounce-in ${activeGame.hour_slot === 20 ? 'bg-gradient-to-b from-purple-300 to-pink-600' : 'bg-gradient-to-b from-yellow-300 to-yellow-600'}`}>
-                   {spotlightDisplay}
-                </div>
-              ) : (
-                <div className="text-6xl md:text-8xl font-black text-red-500 tracking-wider animate-bounce opacity-80" style={{ textShadow: '0 0 20px rgba(239, 68, 68, 0.5)' }}>
-                   {spotlightDisplay}
-                </div>
-              )}
-           </div>
+         <div className="py-6">
+            {!isWaiting ? (
+              <div className={`text-8xl md:text-9xl font-mono font-bold text-transparent bg-clip-text drop-shadow-[0_5px_5px_rgba(0,0,0,0.5)] scale-110 transform transition-transform group-hover:scale-115 animate-bounce-in ${activeGame?.hour_slot === 20 ? 'bg-gradient-to-b from-purple-300 to-pink-600' : 'bg-gradient-to-b from-yellow-300 to-yellow-600'}`}>
+                 {spotlightDisplay}
+              </div>
+            ) : (
+              <div className="text-6xl md:text-8xl font-black text-red-500 tracking-wider animate-bounce opacity-80" style={{ textShadow: '0 0 20px rgba(239, 68, 68, 0.5)' }}>
+                 {spotlightDisplay}
+              </div>
+            )}
+         </div>
 
-           <div className="text-slate-400 text-sm uppercase tracking-widest mt-4 font-medium animate-fade-in flex flex-col items-center gap-2">
-             {!isWaiting ? (
-               <span>Congratulations Winners!</span>
-             ) : (
-               <>
-                 <span>Timing: {formatHourSlot(activeGame.hour_slot)}</span>
-                 <span className="text-yellow-400 font-mono bg-black/30 px-3 py-1 rounded-lg border border-yellow-500/30">
-                   Next update in: {countdown}
-                 </span>
-               </>
-             )}
-           </div>
-        </motion.section>
-      ) : (
-          <motion.div 
-            initial={{ opacity: 0 }}
-            animate={{ opacity: 1 }}
-            className="h-64 flex items-center justify-center bg-slate-900/50 rounded-2xl border border-white/5"
-          >
-              <div className="text-slate-500 text-sm">Waiting for game updates...</div>
-          </motion.div>
-      )}
+         <div className="text-slate-400 text-sm uppercase tracking-widest mt-4 font-medium animate-fade-in flex flex-col items-center gap-2">
+           {!isWaiting ? (
+             <span>Congratulations Winners!</span>
+           ) : (
+             <>
+               <span>Timing: {activeGame ? formatHourSlot(activeGame.hour_slot) : '--:--'}</span>
+               <span className="text-yellow-400 font-mono bg-black/30 px-3 py-1 rounded-lg border border-yellow-500/30">
+                 {isPreviewPhase ? `Next update in: ${countdown}` : 'Waiting for result...'}
+               </span>
+             </>
+           )}
+         </div>
+      </motion.section>
 
       {bannerConfig && bannerConfig.image && (
          <motion.section 

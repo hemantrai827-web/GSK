@@ -11,9 +11,10 @@ import { UniversalGameEngine, UniversalGameId } from '../components/UniversalGam
 import { GameLogo } from '../components/GameAssets';
 import { SLOT_GAMES } from '../config/SlotGames';
 import { SlotEngine } from '../components/SlotEngine';
+import { ChickenRoadEngine } from '../components/ChickenRoadEngine';
 
 interface GameConfig {
-  id: UniversalGameId;
+  id: UniversalGameId | 'CHICKEN_ROAD';
   name: string;
   category: 'ARCADE' | 'CASINO' | 'CARD' | 'BOARD';
   desc: string;
@@ -22,6 +23,7 @@ interface GameConfig {
 
 const GAMES: GameConfig[] = [
   // CASINO / RNG
+  { id: 'CHICKEN_ROAD', name: 'Chicken Road', category: 'ARCADE', desc: 'Cross the road!', isHot: true },
   { id: 'COLOR_PRED', name: 'Wingo 1 Min', category: 'CASINO', desc: 'Red Green Violet 24/7', isHot: true },
   { id: 'COLOR_PRED_30', name: 'Wingo 30 Sec', category: 'CASINO', desc: 'Fast & Furious Wins', isHot: true },
   { id: 'COIN_FLIP', name: 'Coin Flip', category: 'CASINO', desc: 'Double or Nothing' },
@@ -90,6 +92,8 @@ export const MiniGames: React.FC<MiniGamesProps> = ({ initialView }) => {
 
         {activeGame === 'AVIATOR' ? (
              <AviatorEngine onBack={() => setActiveGame(null)} />
+        ) : activeGame === 'CHICKEN_ROAD' ? (
+             <ChickenRoadEngine onBack={() => setActiveGame(null)} />
         ) : activeGame === 'PLINKO' ? (
              <PlinkoEngine onBack={() => setActiveGame(null)} />
         ) : activeGame === 'MINI_LUDO' ? (
