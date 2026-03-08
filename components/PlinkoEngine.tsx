@@ -61,11 +61,21 @@ export const PlinkoEngine: React.FC<{ onBack: () => void }> = ({ onBack }) => {
           await updateDoc(doc(db, 'users', user.id), { balance: increment(win) });
           
           if (betId) {
-             updateDoc(doc(db, 'bets', betId), { status: 'WON', winAmount: win });
+             updateDoc(doc(db, 'bets', betId), { 
+               status: 'WON', 
+               result: 'WON',
+               multiplier: mult,
+               winAmount: win 
+             });
           }
       } else {
           if (betId) {
-             updateDoc(doc(db, 'bets', betId), { status: 'LOST', winAmount: 0 });
+             updateDoc(doc(db, 'bets', betId), { 
+               status: 'LOST', 
+               result: 'LOST',
+               multiplier: mult,
+               winAmount: 0 
+             });
           }
       }
   };

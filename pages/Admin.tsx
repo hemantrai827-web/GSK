@@ -274,7 +274,10 @@ export const AdminPanel: React.FC = () => {
 
           // Also update the gameHistory collection for the chart
           const today = new Date();
-          const dateStr = today.toISOString().split('T')[0]; // YYYY-MM-DD
+          const year = today.getFullYear();
+          const month = String(today.getMonth() + 1).padStart(2, '0');
+          const day = String(today.getDate()).padStart(2, '0');
+          const dateStr = `${year}-${month}-${day}`;
           const historyId = `${game.id}_${dateStr}`;
           
           await setDoc(doc(db, "gameHistory", historyId), {

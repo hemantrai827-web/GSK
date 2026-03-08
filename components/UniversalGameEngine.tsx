@@ -511,12 +511,22 @@ export const UniversalGameEngine: React.FC<{ gameId: UniversalGameId; onBack: ()
                       description: `${config.title} Win`
                   });
                   if (currentBetIdRef.current) {
-                      updateDoc(doc(db, 'bets', currentBetIdRef.current), { status: 'WON', winAmount: amountWon }).catch(console.error);
+                      updateDoc(doc(db, 'bets', currentBetIdRef.current), { 
+                        status: 'WON', 
+                        result: 'WON',
+                        multiplier: mult,
+                        winAmount: amountWon 
+                      }).catch(console.error);
                   }
               }
           } else {
               if (currentBetIdRef.current) {
-                  updateDoc(doc(db, 'bets', currentBetIdRef.current), { status: 'LOST', winAmount: 0 }).catch(console.error);
+                  updateDoc(doc(db, 'bets', currentBetIdRef.current), { 
+                    status: 'LOST', 
+                    result: 'LOST',
+                    multiplier: 0,
+                    winAmount: 0 
+                  }).catch(console.error);
               }
           }
       } catch (e) {

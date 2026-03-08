@@ -95,12 +95,22 @@ export const LudoEngine: React.FC<{ onBack: () => void }> = ({ onBack }) => {
                 description: 'Ludo Royale Win'
             });
             if (currentBetIdRef.current) {
-                updateDoc(doc(db, 'bets', currentBetIdRef.current), { status: 'WON', winAmount });
+                updateDoc(doc(db, 'bets', currentBetIdRef.current), { 
+                  status: 'WON', 
+                  result: 'WON',
+                  multiplier: 1.9,
+                  winAmount 
+                });
             }
         }
     } else {
         if (currentBetIdRef.current) {
-            updateDoc(doc(db, 'bets', currentBetIdRef.current), { status: 'LOST', winAmount: 0 });
+            updateDoc(doc(db, 'bets', currentBetIdRef.current), { 
+              status: 'LOST', 
+              result: 'LOST',
+              multiplier: 0,
+              winAmount: 0 
+            });
         }
     }
   };

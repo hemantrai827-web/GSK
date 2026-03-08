@@ -17,6 +17,13 @@ export const AviatorEngine: React.FC<{ onBack: () => void }> = ({ onBack }) => {
   const [multiplier, setMultiplier] = useState(1.00);
   const [betAmount, setBetAmount] = useState(10);
   const [myBet, setMyBet] = useState<{ active: boolean; cashedOut: boolean; win: number } | null>(null);
+  const myBetRef = useRef<{ active: boolean; cashedOut: boolean; win: number } | null>(null);
+
+  // Sync state to ref
+  useEffect(() => {
+    myBetRef.current = myBet;
+  }, [myBet]);
+
   const [history, setHistory] = useState<number[]>([]);
   const [countdown, setCountdown] = useState(5);
   const [message, setMessage] = useState('');
@@ -117,7 +124,12 @@ export const AviatorEngine: React.FC<{ onBack: () => void }> = ({ onBack }) => {
             description: `Aviator Win ${multiplier.toFixed(2)}x`
         });
         if (currentBetIdRef.current) {
-            updateDoc(doc(db, 'bets', currentBetIdRef.current), { status: 'WON', winAmount });
+            updateDoc(doc(db, 'bets', currentBetIdRef.current), { 
+              status: 'WON', 
+              result: 'WON',
+              multiplier: multiplier,
+              winAmount 
+            });
         }
     }
   };
@@ -156,6 +168,18 @@ export const AviatorEngine: React.FC<{ onBack: () => void }> = ({ onBack }) => {
         if (currentMult >= crashPointRef.current) {
           setPhase('CRASHED');
           setHistory(h => [crashPointRef.current, ...h].slice(0, 8));
+          
+          // Update bet document if lost
+          if (myBetRef.current?.active && !myBetRef.current.cashedOut && currentBetIdRef.current) {
+              updateDoc(doc(db, 'bets', currentBetIdRef.current), { 
+                status: 'LOST', 
+                result: 'LOST',
+                multiplier: 0,
+                winAmount: 0 
+              });
+              setMyBet(prev => prev ? { ...prev, active: false } : null);
+          }
+
           setTimeout(() => mountedRef.current && startGame(), 3000);
         }
 

@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { useApp } from '../context/AppContext';
 import { Button } from './ui/Button';
-import { Coins, Trophy, AlertCircle, PlayCircle, StopCircle } from 'lucide-react';
+import { Coins, Trophy, AlertCircle, PlayCircle, StopCircle, ArrowLeft } from 'lucide-react';
 import { addDoc, collection, doc, updateDoc, increment } from 'firebase/firestore';
 import { db } from '../firebase';
 
@@ -9,13 +9,15 @@ interface ChickenRoadEngineProps {
   onBack: () => void;
 }
 
-const LANES = 10;
-const LANE_HEIGHT = 50;
-const CHICKEN_SIZE = 30;
-const CAR_WIDTH = 60;
-const CAR_HEIGHT = 30;
+const LANES = 5;
+const LANE_HEIGHT = 80;
+const CHICKEN_SIZE = 40;
+const CAR_WIDTH = 80;
+const CAR_HEIGHT = 40;
+const CANVAS_WIDTH = 800;
+const CANVAS_HEIGHT = 600;
 
-const MULTIPLIERS = [1.0, 1.2, 1.5, 2.0, 3.0, 5.0, 8.0, 12.0, 20.0, 50.0, 100.0];
+const MULTIPLIERS = [1.0, 1.2, 1.5, 2.0, 3.0, 5.0];
 
 interface Car {
   x: number;
@@ -23,6 +25,26 @@ interface Car {
   speed: number;
   direction: 1 | -1;
   emoji: string;
+  width: number;
+}
+
+interface Particle {
+  x: number;
+  y: number;
+  vx: number;
+  vy: number;
+  life: number;
+  maxLife: number;
+  color: string;
+  size: number;
+}
+
+interface FloatingText {
+  x: number;
+  y: number;
+  text: string;
+  life: number;
+  maxLife: number;
 }
 
 export const ChickenRoadEngine: React.FC<ChickenRoadEngineProps> = ({ onBack }) => {
@@ -37,8 +59,16 @@ export const ChickenRoadEngine: React.FC<ChickenRoadEngineProps> = ({ onBack }) 
   const currentBetIdRef = useRef<string | null>(null);
 
   // Game state refs for animation loop
-  const chickenRef = useRef({ x: 400, y: 550, targetY: 550 });
+  const chickenRef = useRef({ 
+    x: CANVAS_WIDTH / 2, 
+    y: CANVAS_HEIGHT - LANE_HEIGHT / 2, 
+    targetY: CANVAS_HEIGHT - LANE_HEIGHT / 2,
+    scale: 1,
+    jumpPhase: 0
+  });
   const carsRef = useRef<Car[]>([]);
+  const particlesRef = useRef<Particle[]>([]);
+  const floatingTextsRef = useRef<FloatingText[]>([]);
   const lastMoveTimeRef = useRef<number>(0);
   const animationRef = useRef<number>();
   const gameStateRef = useRef(gameState);
@@ -50,18 +80,19 @@ export const ChickenRoadEngine: React.FC<ChickenRoadEngineProps> = ({ onBack }) 
   useEffect(() => {
     // Initialize cars
     const initialCars: Car[] = [];
-    const carEmojis = ['🚗', '🚙', '🚕', '🚓', '🚚'];
+    const carEmojis = ['🚗', '🚙', '🚕', '🚓', '🚚', '🏎️', '🚜'];
     for (let i = 1; i <= LANES; i++) {
       const direction = Math.random() > 0.5 ? 1 : -1;
-      const speed = 2 + Math.random() * 3;
+      const speed = 3 + Math.random() * 4;
       const numCars = 1 + Math.floor(Math.random() * 2);
       for (let j = 0; j < numCars; j++) {
         initialCars.push({
-          x: Math.random() * 800,
-          y: 600 - (i * LANE_HEIGHT) - (LANE_HEIGHT / 2) - (CAR_HEIGHT / 2),
+          x: Math.random() * CANVAS_WIDTH,
+          y: CANVAS_HEIGHT - (i * LANE_HEIGHT) - (LANE_HEIGHT / 2),
           speed: speed,
           direction: direction,
-          emoji: carEmojis[Math.floor(Math.random() * carEmojis.length)]
+          emoji: carEmojis[Math.floor(Math.random() * carEmojis.length)],
+          width: CAR_WIDTH
         });
       }
     }
@@ -76,46 +107,69 @@ export const ChickenRoadEngine: React.FC<ChickenRoadEngineProps> = ({ onBack }) 
       // Clear canvas
       ctx.clearRect(0, 0, canvas.width, canvas.height);
 
-      // Draw road
+      // Draw road background
       ctx.fillStyle = '#1e293b';
       ctx.fillRect(0, 0, canvas.width, canvas.height);
 
       // Draw lanes
-      ctx.strokeStyle = '#334155';
-      ctx.lineWidth = 2;
-      for (let i = 1; i <= LANES; i++) {
+      ctx.strokeStyle = '#475569';
+      ctx.lineWidth = 4;
+      for (let i = 1; i <= LANES + 1; i++) {
         ctx.beginPath();
-        ctx.setLineDash([20, 20]);
-        ctx.moveTo(0, 600 - i * LANE_HEIGHT);
-        ctx.lineTo(800, 600 - i * LANE_HEIGHT);
+        ctx.setLineDash([30, 20]);
+        ctx.moveTo(0, CANVAS_HEIGHT - i * LANE_HEIGHT);
+        ctx.lineTo(CANVAS_WIDTH, CANVAS_HEIGHT - i * LANE_HEIGHT);
         ctx.stroke();
       }
       ctx.setLineDash([]);
 
-      // Draw start and end zones
+      // Draw start and end safe zones
       ctx.fillStyle = '#064e3b'; // Safe zone bottom
-      ctx.fillRect(0, 600 - LANE_HEIGHT, 800, LANE_HEIGHT);
+      ctx.fillRect(0, CANVAS_HEIGHT - LANE_HEIGHT, CANVAS_WIDTH, LANE_HEIGHT);
       ctx.fillStyle = '#064e3b'; // Safe zone top
-      ctx.fillRect(0, 0, 800, 600 - (LANES + 1) * LANE_HEIGHT);
+      ctx.fillRect(0, 0, CANVAS_WIDTH, CANVAS_HEIGHT - (LANES + 1) * LANE_HEIGHT);
 
       // Update and draw cars
+      ctx.font = '40px Arial';
+      ctx.textAlign = 'center';
+      ctx.textBaseline = 'middle';
       carsRef.current.forEach(car => {
         if (gameStateRef.current === 'PLAYING') {
           car.x += car.speed * car.direction;
-          if (car.direction === 1 && car.x > 800) car.x = -CAR_WIDTH;
-          if (car.direction === -1 && car.x < -CAR_WIDTH) car.x = 800;
+          if (car.direction === 1 && car.x > CANVAS_WIDTH + car.width) car.x = -car.width;
+          if (car.direction === -1 && car.x < -car.width) car.x = CANVAS_WIDTH + car.width;
         }
         
-        ctx.font = '30px Arial';
-        ctx.fillText(car.emoji, car.x, car.y + 25);
+        // Draw car shadow
+        ctx.fillStyle = 'rgba(0,0,0,0.3)';
+        ctx.beginPath();
+        ctx.ellipse(car.x, car.y + 15, 30, 10, 0, 0, Math.PI * 2);
+        ctx.fill();
+        
+        // Draw car
+        ctx.save();
+        if (car.direction === -1) {
+          ctx.translate(car.x, car.y);
+          ctx.scale(-1, 1);
+          ctx.fillText(car.emoji, 0, 0);
+        } else {
+          ctx.fillText(car.emoji, car.x, car.y);
+        }
+        ctx.restore();
       });
 
       // Update chicken position
       const chicken = chickenRef.current;
       if (gameStateRef.current === 'PLAYING') {
-        // Move chicken smoothly to target Y
+        // Jump animation logic
         if (chicken.y > chicken.targetY) {
-          chicken.y -= 2; // Movement speed
+          chicken.y -= 4; // Movement speed
+          chicken.jumpPhase += 0.2;
+          chicken.scale = 1 + Math.sin(chicken.jumpPhase) * 0.3; // Scale up and down
+        } else {
+          chicken.y = chicken.targetY;
+          chicken.scale = 1;
+          chicken.jumpPhase = 0;
         }
 
         // Logic to advance lane
@@ -124,8 +178,17 @@ export const ChickenRoadEngine: React.FC<ChickenRoadEngineProps> = ({ onBack }) 
           if (nextLane <= LANES) {
             setCurrentLane(nextLane);
             setMultiplier(MULTIPLIERS[nextLane]);
-            chicken.targetY = 600 - (nextLane * LANE_HEIGHT) - (LANE_HEIGHT / 2) - (CHICKEN_SIZE / 2);
+            chicken.targetY = CANVAS_HEIGHT - (nextLane * LANE_HEIGHT) - (LANE_HEIGHT / 2);
             lastMoveTimeRef.current = time;
+            
+            // Add floating text for multiplier
+            floatingTextsRef.current.push({
+              x: chicken.x,
+              y: chicken.y - 40,
+              text: `${MULTIPLIERS[nextLane]}x`,
+              life: 0,
+              maxLife: 60
+            });
           } else {
             // Reached the end! Auto cashout
             handleCashOut(MULTIPLIERS[LANES]);
@@ -133,15 +196,13 @@ export const ChickenRoadEngine: React.FC<ChickenRoadEngineProps> = ({ onBack }) 
         }
 
         // Collision detection
-        const chickenRect = { x: chicken.x, y: chicken.y, w: CHICKEN_SIZE, h: CHICKEN_SIZE };
+        const chickenHitbox = 20; // Smaller hitbox for fairness
         for (const car of carsRef.current) {
-          const carRect = { x: car.x, y: car.y, w: CAR_WIDTH - 10, h: CAR_HEIGHT }; // Slightly smaller hitbox for fairness
-          if (
-            chickenRect.x < carRect.x + carRect.w &&
-            chickenRect.x + chickenRect.w > carRect.x &&
-            chickenRect.y < carRect.y + carRect.h &&
-            chickenRect.y + chickenRect.h > carRect.y
-          ) {
+          const dx = chicken.x - car.x;
+          const dy = chicken.y - car.y;
+          const distance = Math.sqrt(dx * dx + dy * dy);
+          
+          if (distance < chickenHitbox + 25) { // 25 is approx car radius
             handleCrash();
             break;
           }
@@ -149,12 +210,58 @@ export const ChickenRoadEngine: React.FC<ChickenRoadEngineProps> = ({ onBack }) 
       }
 
       // Draw chicken
-      ctx.font = '30px Arial';
-      if (gameStateRef.current === 'CRASHED') {
-        ctx.fillText('💥', chicken.x, chicken.y + 25);
-      } else {
-        ctx.fillText('🐔', chicken.x, chicken.y + 25);
+      if (gameStateRef.current !== 'CRASHED') {
+        ctx.save();
+        ctx.translate(chicken.x, chicken.y);
+        ctx.scale(chicken.scale, chicken.scale);
+        
+        // Shadow
+        ctx.fillStyle = 'rgba(0,0,0,0.3)';
+        ctx.beginPath();
+        ctx.ellipse(0, 15, 15, 5, 0, 0, Math.PI * 2);
+        ctx.fill();
+        
+        ctx.font = '40px Arial';
+        ctx.fillText('🐔', 0, 0);
+        ctx.restore();
       }
+
+      // Draw particles
+      particlesRef.current.forEach((p, index) => {
+        p.x += p.vx;
+        p.y += p.vy;
+        p.life++;
+        
+        ctx.globalAlpha = 1 - (p.life / p.maxLife);
+        ctx.fillStyle = p.color;
+        ctx.beginPath();
+        ctx.arc(p.x, p.y, p.size, 0, Math.PI * 2);
+        ctx.fill();
+        ctx.globalAlpha = 1.0;
+        
+        if (p.life >= p.maxLife) {
+          particlesRef.current.splice(index, 1);
+        }
+      });
+
+      // Draw floating texts
+      floatingTextsRef.current.forEach((ft, index) => {
+        ft.y -= 1;
+        ft.life++;
+        
+        ctx.globalAlpha = 1 - (ft.life / ft.maxLife);
+        ctx.fillStyle = '#fbbf24'; // yellow-400
+        ctx.font = 'bold 24px Arial';
+        ctx.strokeStyle = '#000';
+        ctx.lineWidth = 3;
+        ctx.strokeText(ft.text, ft.x, ft.y);
+        ctx.fillText(ft.text, ft.x, ft.y);
+        ctx.globalAlpha = 1.0;
+        
+        if (ft.life >= ft.maxLife) {
+          floatingTextsRef.current.splice(index, 1);
+        }
+      });
 
       animationRef.current = requestAnimationFrame(render);
     };
@@ -165,6 +272,22 @@ export const ChickenRoadEngine: React.FC<ChickenRoadEngineProps> = ({ onBack }) 
       if (animationRef.current) cancelAnimationFrame(animationRef.current);
     };
   }, [currentLane]); // Re-bind when currentLane changes to access latest state in handleCashOut
+
+  const createExplosion = (x: number, y: number) => {
+    const colors = ['#ef4444', '#f97316', '#eab308', '#ffffff'];
+    for (let i = 0; i < 30; i++) {
+      particlesRef.current.push({
+        x,
+        y,
+        vx: (Math.random() - 0.5) * 10,
+        vy: (Math.random() - 0.5) * 10,
+        life: 0,
+        maxLife: 30 + Math.random() * 20,
+        color: colors[Math.floor(Math.random() * colors.length)],
+        size: 2 + Math.random() * 6
+      });
+    }
+  };
 
   const startGame = async () => {
     if (!user) {
@@ -186,7 +309,15 @@ export const ChickenRoadEngine: React.FC<ChickenRoadEngineProps> = ({ onBack }) 
     if (betId) {
       currentBetIdRef.current = betId;
       // Reset game state
-      chickenRef.current = { x: 400 - CHICKEN_SIZE/2, y: 600 - (LANE_HEIGHT / 2) - (CHICKEN_SIZE / 2), targetY: 600 - (LANE_HEIGHT / 2) - (CHICKEN_SIZE / 2) };
+      chickenRef.current = { 
+        x: CANVAS_WIDTH / 2, 
+        y: CANVAS_HEIGHT - LANE_HEIGHT / 2, 
+        targetY: CANVAS_HEIGHT - LANE_HEIGHT / 2,
+        scale: 1,
+        jumpPhase: 0
+      };
+      particlesRef.current = [];
+      floatingTextsRef.current = [];
       setCurrentLane(0);
       setMultiplier(1.0);
       lastMoveTimeRef.current = performance.now();
@@ -196,6 +327,7 @@ export const ChickenRoadEngine: React.FC<ChickenRoadEngineProps> = ({ onBack }) 
 
   const handleCrash = async () => {
     setGameState('CRASHED');
+    createExplosion(chickenRef.current.x, chickenRef.current.y);
     
     if (user) {
       try {
@@ -210,7 +342,12 @@ export const ChickenRoadEngine: React.FC<ChickenRoadEngineProps> = ({ onBack }) 
           timestamp: new Date().toISOString()
         });
         if (currentBetIdRef.current) {
-            updateDoc(doc(db, 'bets', currentBetIdRef.current), { status: 'LOST', winAmount: 0 });
+            updateDoc(doc(db, 'bets', currentBetIdRef.current), { 
+              status: 'LOST', 
+              result: 'LOST',
+              multiplier: 0,
+              winAmount: 0 
+            });
         }
       } catch (e) {
         console.error("Error saving result:", e);
@@ -237,7 +374,12 @@ export const ChickenRoadEngine: React.FC<ChickenRoadEngineProps> = ({ onBack }) 
             description: `Chicken Road Win ${finalMultiplier.toFixed(2)}x`
         });
         if (currentBetIdRef.current) {
-            updateDoc(doc(db, 'bets', currentBetIdRef.current), { status: 'WON', winAmount: payout });
+            updateDoc(doc(db, 'bets', currentBetIdRef.current), { 
+              status: 'WON', 
+              result: 'WON',
+              multiplier: finalMultiplier,
+              winAmount: payout 
+            });
         }
         await addDoc(collection(db, 'game_results'), {
           userId: user.id,
@@ -256,72 +398,84 @@ export const ChickenRoadEngine: React.FC<ChickenRoadEngineProps> = ({ onBack }) 
   };
 
   return (
-    <div className="max-w-4xl mx-auto p-4 animate-in fade-in duration-500">
+    <div className="max-w-4xl mx-auto p-2 md:p-4 animate-in fade-in duration-500">
       <div className="bg-slate-900 rounded-2xl border border-slate-800 overflow-hidden shadow-2xl">
         
-        {/* Game Header */}
-        <div className="bg-slate-950 p-4 border-b border-slate-800 flex justify-between items-center">
-          <div className="flex items-center gap-3">
-            <div className="w-10 h-10 bg-orange-500/20 rounded-xl flex items-center justify-center border border-orange-500/50">
-              <span className="text-2xl">🐔</span>
-            </div>
+        {/* Top UI Bar */}
+        <div className="bg-slate-950 p-4 border-b border-slate-800 flex flex-wrap justify-between items-center gap-4">
+          <div className="flex items-center gap-4">
+            <button onClick={onBack} className="p-2 bg-slate-800 hover:bg-slate-700 rounded-full transition-colors">
+              <ArrowLeft className="w-5 h-5 text-white" />
+            </button>
             <div>
-              <h2 className="text-xl font-black text-white italic tracking-tight">CHICKEN ROAD</h2>
-              <p className="text-xs text-slate-400 font-medium">Cross lanes to multiply your bet!</p>
+              <h2 className="text-xl md:text-2xl font-black text-white italic tracking-tight flex items-center gap-2">
+                🐔 CHICKEN ROAD
+              </h2>
             </div>
           </div>
-          <div className="bg-slate-900 px-4 py-2 rounded-xl border border-slate-800 flex items-center gap-2">
-            <Coins className="w-4 h-4 text-yellow-400" />
-            <span className="font-mono font-bold text-white">₹{walletBalance.toLocaleString()}</span>
+          
+          <div className="flex items-center gap-4">
+            <div className="bg-slate-900 px-4 py-2 rounded-xl border border-slate-800 flex flex-col items-center">
+              <span className="text-[10px] text-slate-400 font-bold uppercase">Balance</span>
+              <div className="flex items-center gap-1">
+                <Coins className="w-4 h-4 text-yellow-400" />
+                <span className="font-mono font-bold text-white">₹{walletBalance.toLocaleString()}</span>
+              </div>
+            </div>
+            <div className="bg-slate-900 px-4 py-2 rounded-xl border border-slate-800 flex flex-col items-center">
+              <span className="text-[10px] text-slate-400 font-bold uppercase">Current Bet</span>
+              <span className="font-mono font-bold text-white">₹{betAmount}</span>
+            </div>
+            <div className="bg-yellow-500/10 px-4 py-2 rounded-xl border border-yellow-500/30 flex flex-col items-center">
+              <span className="text-[10px] text-yellow-500 font-bold uppercase">Multiplier</span>
+              <span className="font-mono font-black text-yellow-400 text-lg leading-none">{multiplier.toFixed(2)}x</span>
+            </div>
           </div>
         </div>
 
         {/* Game Area */}
-        <div className="relative bg-slate-950 p-4 flex justify-center">
-          <div className="relative rounded-xl overflow-hidden border-2 border-slate-800 shadow-inner" style={{ width: '100%', maxWidth: '800px', aspectRatio: '800/600' }}>
+        <div className="relative bg-[#0f172a] p-2 md:p-6 flex justify-center">
+          <div className="relative rounded-xl overflow-hidden border-4 border-slate-800 shadow-2xl w-full max-w-[800px] aspect-[4/3]">
             <canvas 
               ref={canvasRef} 
-              width={800} 
-              height={600} 
-              className="w-full h-full object-contain bg-[#1e293b]"
+              width={CANVAS_WIDTH} 
+              height={CANVAS_HEIGHT} 
+              className="w-full h-full object-cover bg-[#1e293b]"
             />
 
             {/* Overlays */}
             {gameState === 'CRASHED' && (
-              <div className="absolute inset-0 bg-red-900/40 backdrop-blur-sm flex flex-col items-center justify-center animate-in fade-in zoom-in duration-300">
-                <div className="text-6xl mb-4 animate-bounce">💥</div>
-                <h3 className="text-4xl font-black text-white drop-shadow-lg mb-2">CRASHED!</h3>
-                <p className="text-red-200 font-medium text-lg">You lost ₹{betAmount}</p>
+              <div className="absolute inset-0 bg-red-950/80 backdrop-blur-sm flex flex-col items-center justify-center animate-in fade-in zoom-in duration-300">
+                <div className="text-7xl mb-4 animate-bounce">💥</div>
+                <h3 className="text-5xl font-black text-white drop-shadow-lg mb-2 tracking-tight">CRASHED!</h3>
+                <p className="text-red-400 font-bold text-xl bg-red-950/50 px-6 py-2 rounded-full border border-red-500/30">
+                  You lost ₹{betAmount}
+                </p>
               </div>
             )}
 
             {gameState === 'CASHED_OUT' && (
-              <div className="absolute inset-0 bg-green-900/40 backdrop-blur-sm flex flex-col items-center justify-center animate-in fade-in zoom-in duration-300">
-                <Trophy className="w-16 h-16 text-yellow-400 mb-4 animate-bounce" />
-                <h3 className="text-4xl font-black text-white drop-shadow-lg mb-2">{multiplier}x WIN!</h3>
-                <p className="text-green-200 font-medium text-lg">Payout: ₹{Math.floor(betAmount * multiplier)}</p>
-              </div>
-            )}
-
-            {/* Floating Multiplier */}
-            {gameState === 'PLAYING' && (
-              <div className="absolute top-4 right-4 bg-black/60 backdrop-blur-md border border-white/10 px-4 py-2 rounded-xl shadow-xl">
-                <div className="text-sm text-slate-400 font-medium mb-1 text-center">CURRENT</div>
-                <div className="text-3xl font-black text-yellow-400 font-mono">{multiplier.toFixed(2)}x</div>
+              <div className="absolute inset-0 bg-emerald-950/80 backdrop-blur-sm flex flex-col items-center justify-center animate-in fade-in zoom-in duration-300">
+                <Trophy className="w-20 h-20 text-yellow-400 mb-4 animate-bounce drop-shadow-[0_0_15px_rgba(250,204,21,0.5)]" />
+                <h3 className="text-6xl font-black text-white drop-shadow-lg mb-2 tracking-tight">{multiplier}x</h3>
+                <h4 className="text-3xl font-bold text-emerald-400 mb-4">WINNER!</h4>
+                <p className="text-white font-black text-2xl bg-emerald-600/50 px-8 py-3 rounded-full border border-emerald-400/50 shadow-xl">
+                  Payout: ₹{Math.floor(betAmount * multiplier)}
+                </p>
               </div>
             )}
           </div>
         </div>
 
         {/* Controls */}
-        <div className="p-6 bg-slate-900 border-t border-slate-800">
+        <div className="p-4 md:p-6 bg-slate-900 border-t border-slate-800">
           {error && (
-            <div className="mb-4 p-3 bg-red-500/10 border border-red-500/50 rounded-lg flex items-center gap-2 text-red-400 text-sm">
-              <AlertCircle className="w-4 h-4" /> {error}
+            <div className="mb-4 p-3 bg-red-500/10 border border-red-500/50 rounded-lg flex items-center gap-2 text-red-400 text-sm font-medium">
+              <AlertCircle className="w-5 h-5" /> {error}
             </div>
           )}
 
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-6 items-end">
             {/* Bet Input */}
             <div className="space-y-2">
               <label className="text-xs font-bold text-slate-400 uppercase tracking-wider">Bet Amount (₹)</label>
@@ -331,30 +485,30 @@ export const ChickenRoadEngine: React.FC<ChickenRoadEngineProps> = ({ onBack }) 
                   value={betAmount}
                   onChange={(e) => setBetAmount(Number(e.target.value))}
                   disabled={gameState === 'PLAYING'}
-                  className="flex-1 bg-slate-950 border border-slate-700 rounded-xl px-4 py-3 text-white font-mono font-bold focus:outline-none focus:border-orange-500 transition-colors disabled:opacity-50"
+                  className="flex-1 bg-slate-950 border border-slate-700 rounded-xl px-4 py-4 text-white font-mono font-bold text-lg focus:outline-none focus:border-yellow-500 transition-colors disabled:opacity-50"
                 />
-                <div className="grid grid-cols-2 gap-2">
-                  <Button variant="secondary" onClick={() => setBetAmount(Math.max(10, betAmount / 2))} disabled={gameState === 'PLAYING'}>/2</Button>
-                  <Button variant="secondary" onClick={() => setBetAmount(betAmount * 2)} disabled={gameState === 'PLAYING'}>x2</Button>
+                <div className="grid grid-cols-2 gap-2 w-32">
+                  <Button variant="secondary" onClick={() => setBetAmount(Math.max(10, Math.floor(betAmount / 2)))} disabled={gameState === 'PLAYING'} className="font-bold">/2</Button>
+                  <Button variant="secondary" onClick={() => setBetAmount(betAmount * 2)} disabled={gameState === 'PLAYING'} className="font-bold">x2</Button>
                 </div>
               </div>
             </div>
 
             {/* Action Button */}
-            <div className="flex items-end">
+            <div>
               {gameState === 'IDLE' || gameState === 'CRASHED' || gameState === 'CASHED_OUT' ? (
                 <Button 
                   onClick={startGame} 
-                  className="w-full h-12 bg-gradient-to-r from-orange-500 to-red-500 hover:from-orange-400 hover:to-red-400 text-white font-black text-lg shadow-[0_0_20px_rgba(249,115,22,0.3)] hover:shadow-[0_0_30px_rgba(249,115,22,0.5)] transition-all"
+                  className="w-full h-14 bg-gradient-to-r from-yellow-500 to-orange-500 hover:from-yellow-400 hover:to-orange-400 text-black font-black text-xl shadow-[0_0_20px_rgba(234,179,8,0.3)] hover:shadow-[0_0_30px_rgba(234,179,8,0.5)] transition-all rounded-xl"
                 >
-                  <PlayCircle className="w-5 h-5 mr-2" /> START GAME
+                  <PlayCircle className="w-6 h-6 mr-2" /> START GAME
                 </Button>
               ) : (
                 <Button 
                   onClick={() => handleCashOut(multiplier)} 
-                  className="w-full h-12 bg-gradient-to-r from-green-500 to-emerald-600 hover:from-green-400 hover:to-emerald-500 text-white font-black text-lg shadow-[0_0_20px_rgba(16,185,129,0.3)] hover:shadow-[0_0_30px_rgba(16,185,129,0.5)] transition-all animate-pulse"
+                  className="w-full h-14 bg-gradient-to-r from-emerald-500 to-green-600 hover:from-emerald-400 hover:to-green-500 text-white font-black text-xl shadow-[0_0_20px_rgba(16,185,129,0.3)] hover:shadow-[0_0_30px_rgba(16,185,129,0.5)] transition-all animate-pulse rounded-xl"
                 >
-                  <StopCircle className="w-5 h-5 mr-2" /> CASH OUT ₹{Math.floor(betAmount * multiplier)}
+                  <StopCircle className="w-6 h-6 mr-2" /> CASH OUT ₹{Math.floor(betAmount * multiplier)}
                 </Button>
               )}
             </div>
@@ -364,3 +518,4 @@ export const ChickenRoadEngine: React.FC<ChickenRoadEngineProps> = ({ onBack }) 
     </div>
   );
 };
+

@@ -73,9 +73,32 @@ export const Home: React.FC<{ navigateTo: (tab: string) => void }> = ({ navigate
   let spotlightStatus = isPreviewPhase ? 'Next Game Preview' : 'Result Pending';
   let isWaiting = isPreviewPhase;
 
+  const getTodayResult = (gameId: string) => {
+      const year = currentTime.getFullYear();
+      const month = String(currentTime.getMonth() + 1).padStart(2, '0');
+      const day = String(currentTime.getDate()).padStart(2, '0');
+      const todayKey = `${year}-${month}-${day}`;
+      
+      const res = gameHistory.find(r => r.gameId === gameId && r.date === todayKey);
+      return res && res.result !== undefined && res.result !== null && res.result !== '' ? String(res.result).padStart(2, '0') : '----';
+  };
+
+  const getYesterdayResult = (gameId: string) => {
+      const yesterday = new Date(currentTime);
+      yesterday.setDate(yesterday.getDate() - 1);
+      const year = yesterday.getFullYear();
+      const month = String(yesterday.getMonth() + 1).padStart(2, '0');
+      const day = String(yesterday.getDate()).padStart(2, '0');
+      const yesterdayKey = `${year}-${month}-${day}`;
+      
+      const res = gameHistory.find(r => r.gameId === gameId && r.date === yesterdayKey);
+      return res && res.result !== undefined && res.result !== null && res.result !== '' ? String(res.result).padStart(2, '0') : '----';
+  };
+
   if (!isPreviewPhase && activeGame) {
-    if (activeGame.result_number !== undefined && activeGame.result_number !== null && activeGame.result_number !== '') {
-      spotlightDisplay = String(activeGame.result_number).padStart(2, '0');
+    const todayRes = getTodayResult(activeGame.id);
+    if (todayRes !== '----') {
+      spotlightDisplay = todayRes;
       spotlightStatus = 'Live Result Declared';
       isWaiting = false;
     } else {
@@ -101,19 +124,6 @@ export const Home: React.FC<{ navigateTo: (tab: string) => void }> = ({ navigate
       countdown = `${displayMinutes.toString().padStart(2, '0')}:${displaySeconds.toString().padStart(2, '0')}`;
     }
   }
-
-  const getYesterdayResult = (gameId: string) => {
-      const yesterday = new Date();
-      yesterday.setDate(yesterday.getDate() - 1);
-      // Format as YYYY-MM-DD in local time
-      const year = yesterday.getFullYear();
-      const month = String(yesterday.getMonth() + 1).padStart(2, '0');
-      const day = String(yesterday.getDate()).padStart(2, '0');
-      const yesterdayKey = `${year}-${month}-${day}`;
-      
-      const res = gameHistory.find(r => r.gameId === gameId && r.date === yesterdayKey);
-      return res && res.result !== undefined && res.result !== null && res.result !== '' ? String(res.result).padStart(2, '0') : '----';
-  };
 
   const historyData = React.useMemo(() => {
       if (!gameHistory || gameHistory.length === 0) return [];
@@ -283,9 +293,9 @@ export const Home: React.FC<{ navigateTo: (tab: string) => void }> = ({ navigate
               </div>
               
               <div className={`flex items-center justify-center py-4 my-2 rounded-lg border shadow-inner transition-colors ${isSpecial ? 'bg-purple-950/50 border-purple-500/30 group-hover:bg-purple-900/50' : 'bg-black/40 border-white/5 group-hover:bg-black/60'}`}>
-                {game.result_number !== undefined && game.result_number !== null && game.result_number !== '' ? (
+                {getTodayResult(game.id) !== '----' ? (
                   <span className={`text-4xl font-mono font-bold tracking-widest drop-shadow group-hover:scale-110 transition-transform ${isSpecial ? 'text-purple-400' : 'text-yellow-400'}`}>
-                    {String(game.result_number).padStart(2, '0')}
+                    {getTodayResult(game.id)}
                   </span>
                 ) : (
                   <span className={`text-2xl font-mono font-bold animate-pulse ${isSpecial ? 'text-purple-500/50' : 'text-slate-600'}`}>
@@ -301,8 +311,8 @@ export const Home: React.FC<{ navigateTo: (tab: string) => void }> = ({ navigate
                  </div>
                  <div className="flex flex-col items-center flex-1">
                     <span className="text-[10px] text-slate-500 uppercase tracking-wider mb-1">Today</span>
-                    <span className={`font-mono font-bold ${game.result_number !== undefined && game.result_number !== null && game.result_number !== '' ? 'text-yellow-400' : 'text-slate-500'}`}>
-                        {game.result_number !== undefined && game.result_number !== null && game.result_number !== '' ? String(game.result_number).padStart(2, '0') : '----'}
+                    <span className={`font-mono font-bold ${getTodayResult(game.id) !== '----' ? 'text-yellow-400' : 'text-slate-500'}`}>
+                        {getTodayResult(game.id)}
                     </span>
                  </div>
               </div>

@@ -260,6 +260,8 @@ export const WingoEngine: React.FC<WingoProps> = ({ onBack, mode = '1min' }) => 
                     const betRef = doc(db, 'bets', bet.id);
                     batch.update(betRef, { 
                         status: win ? 'WON' : 'LOST', 
+                        result: win ? 'WON' : 'LOST',
+                        multiplier: win ? multiplier : 0,
                         winAmount: winAmount 
                     });
 

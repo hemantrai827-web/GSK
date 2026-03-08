@@ -92,26 +92,53 @@ export const AgentSubscription: React.FC = () => {
 
   const isExpired = (user.access_expires_at !== undefined && user.access_expires_at !== null) ? new Date() > (user.access_expires_at.toDate ? user.access_expires_at.toDate() : new Date(user.access_expires_at)) : true;
 
+  const isMobile = /iPhone|iPad|iPod|Android/i.test(navigator.userAgent);
+  const upiUri = 'upi://pay?pa=exclusivehub@axl&pn=Agent%20Activation&am=2000&cu=INR';
+  const dynamicQrCodeUrl = `https://api.qrserver.com/v1/create-qr-code/?size=200x200&data=${encodeURIComponent(upiUri)}`;
+
+  const handlePaymentClick = () => {
+    window.location.href = upiUri;
+  };
+
   return (
     <div className="max-w-md mx-auto p-6 glass-panel rounded-2xl border border-yellow-500/20 shadow-2xl mt-10 animate-fade-in">
       <div className="text-center mb-6">
         <div className="inline-flex items-center justify-center w-16 h-16 rounded-full bg-yellow-500/20 mb-4">
           <Clock className="w-8 h-8 text-yellow-400" />
         </div>
-        <h2 className="text-2xl font-bold text-white serif mb-2">Agent Subscription</h2>
+        <h2 className="text-2xl font-bold text-white serif mb-2">Agent ID Activation</h2>
         <p className="text-slate-400 text-sm">
           {isExpired 
-            ? "Your agent access has expired. Please pay the 7-day login fee to continue using your account."
+            ? "Your agent access has expired. Please pay the activation fee to continue using your account."
             : "Renew your agent access for another 7 days. The time will be added to your current balance."}
         </p>
       </div>
 
       <div className="bg-slate-900/50 p-6 rounded-xl border border-slate-700 mb-6 flex flex-col items-center">
+        <h3 className="text-xl font-bold text-white mb-2">Amount: ₹2000</h3>
+        
         <p className="text-sm text-slate-300 mb-4 text-center">Scan the QR code below to make the payment</p>
         <div className="bg-white p-2 rounded-xl shadow-lg mb-4">
-          <img src={qrCodeUrl} alt="Payment QR" className="w-48 h-48 object-contain" />
+          <img src={dynamicQrCodeUrl} alt="Payment QR" className="w-48 h-48 object-contain" />
         </div>
-        <p className="text-xs text-yellow-400 font-medium text-center bg-yellow-500/10 px-3 py-1 rounded-full border border-yellow-500/20">
+
+        <div className="w-full space-y-3 mt-2 mb-4">
+          <p className="text-sm text-slate-300 mb-2 text-center">Or tap a button below to pay via UPI app</p>
+          <button onClick={handlePaymentClick} className="w-full flex items-center justify-center gap-2 bg-white text-black font-bold py-3 rounded-xl hover:bg-gray-100 transition-colors">
+            <img src="https://upload.wikimedia.org/wikipedia/commons/thumb/f/f2/Google_Pay_Logo.svg/512px-Google_Pay_Logo.svg.png" alt="GPay" className="h-5 object-contain" />
+            Pay with GPay
+          </button>
+          <button onClick={handlePaymentClick} className="w-full flex items-center justify-center gap-2 bg-[#5f259f] text-white font-bold py-3 rounded-xl hover:bg-[#4a1d7c] transition-colors">
+            <img src="https://upload.wikimedia.org/wikipedia/commons/thumb/7/71/PhonePe_Logo.svg/512px-PhonePe_Logo.svg.png" alt="PhonePe" className="h-5 object-contain filter brightness-0 invert" />
+            Pay with PhonePe
+          </button>
+          <button onClick={handlePaymentClick} className="w-full flex items-center justify-center gap-2 bg-[#00baf2] text-white font-bold py-3 rounded-xl hover:bg-[#0099c8] transition-colors">
+            <img src="https://upload.wikimedia.org/wikipedia/commons/thumb/2/24/Paytm_Logo_%28standalone%29.svg/512px-Paytm_Logo_%28standalone%29.svg.png" alt="Paytm" className="h-4 object-contain filter brightness-0 invert" />
+            Pay with Paytm
+          </button>
+        </div>
+        
+        <p className="text-xs text-yellow-400 font-medium text-center bg-yellow-500/10 px-3 py-1 rounded-full border border-yellow-500/20 mt-2">
           After payment, upload the screenshot and enter the 12-digit UTR number below.
         </p>
       </div>

@@ -380,27 +380,39 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
 
     try {
         let spinResult: SlotSpinResult | null = null;
+        let newBalance = 0;
         
         await runTransaction(db, async (transaction) => {
             const userRef = doc(db, 'users', user.id);
             const userDoc = await transaction.get(userRef);
-            if (!userDoc.exists()) throw "User Not Found";
+            if (!userDoc.exists()) throw new Error("User Not Found");
             const userData = userDoc.data() as User;
+            const currentBalance = Number(userData.balance) || 0;
 
-            if (userData.balance < betAmount) {
-                throw "Insufficient Funds";
+            if (currentBalance < betAmount) {
+                throw new Error("Insufficient Balance");
             }
 
             spinResult = calculateSlotResult(gameConfig, betAmount);
-            const newBalance = userData.balance - betAmount + spinResult.totalWin;
+            newBalance = currentBalance - betAmount + spinResult.totalWin;
             
             transaction.update(userRef, { balance: newBalance });
 
             const betRef = doc(collection(db, 'bets'));
-            const betData: Bet = {
-                id: betRef.id, userId: user.id, gameId: `slot_${gameId}`, gameType: 'SLOT',
-                selection: 'SPIN', amount: betAmount, status: spinResult.isWin ? 'WON' : 'LOST',
-                winAmount: spinResult.totalWin, timestamp: Date.now()
+            const betData: any = {
+                id: betRef.id, 
+                userId: user.id, 
+                gameId: `slot_${gameId}`, 
+                game_name: gameConfig.name,
+                gameType: 'SLOT',
+                selection: 'SPIN', 
+                amount: betAmount, 
+                bet_amount: betAmount,
+                status: spinResult.isWin ? 'WON' : 'LOST',
+                result: spinResult.isWin ? 'WON' : 'LOST',
+                multiplier: spinResult.isWin ? (spinResult.totalWin / betAmount) : 0,
+                winAmount: spinResult.totalWin, 
+                timestamp: Date.now()
             };
             transaction.set(betRef, betData);
 
@@ -413,11 +425,15 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
             }
         });
 
+        // Realtime update UI
+        setUser(prev => prev ? { ...prev, balance: newBalance } : null);
+
         return spinResult;
 
     } catch (e: any) {
         console.error("Slot Spin Error:", e);
-        showNotification(typeof e === 'string' ? e : "Spin Failed", 'error');
+        const errorMsg = e.message || (typeof e === 'string' ? e : "Spin Failed");
+        showNotification(errorMsg, 'error');
         return null;
     }
   };
@@ -543,21 +559,33 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
       const txId = 'fee-' + Date.now();
 
       try {
+        let newBalance = 0;
         await runTransaction(db, async (transaction) => {
             const userDoc = await transaction.get(userRef);
-            if (!userDoc.exists()) throw "User Not Found";
+            if (!userDoc.exists()) throw new Error("User Not Found");
             const userData = userDoc.data() as User;
-            if (userData.balance < amount) throw "Insufficient Funds";
+            const currentBalance = Number(userData.balance) || 0;
+            if (currentBalance < amount) throw new Error("Insufficient Balance");
 
-            const newBalance = userData.balance - amount;
+            newBalance = currentBalance - amount;
             let status: 'PENDING' | 'COMPLETED' = 'PENDING';
             if (gameType === 'MINI_GAME' && !gameId.includes('wingo') && !gameId.includes('ludo') && !gameId.includes('aviator') && !gameId.includes('plinko')) {
                 status = 'COMPLETED'; 
             }
 
             const betData: any = {
-                id: betId, userId: user.id, gameId, gameType, selection, amount,
-                status, timestamp: Date.now()
+                id: betId, 
+                userId: user.id, 
+                gameId, 
+                game_name: selection, // Map selection to game_name for mini games
+                gameType, 
+                selection, 
+                amount,
+                bet_amount: amount, // Add bet_amount field
+                multiplier: 0, // Default multiplier
+                result: status === 'COMPLETED' ? 'PENDING' : status, // Default result
+                status, 
+                timestamp: Date.now()
             };
             if (roundId) betData.roundId = roundId;
 
@@ -568,10 +596,15 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
                 timestamp: Date.now(), description: `Bet: ${selection}`
             });
         });
+        
+        // Realtime update UI
+        setUser(prev => prev ? { ...prev, balance: newBalance } : null);
+        
         return betId;
       } catch (e: any) {
         console.error("Bet Error:", e);
-        showNotification(typeof e === 'string' ? e : "Bet Failed. Try again.", 'error');
+        const errorMsg = e.message || (typeof e === 'string' ? e : "Bet Failed. Try again.");
+        showNotification(errorMsg, 'error');
         return null;
       }
   };
@@ -581,14 +614,17 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
       const totalAmount = betsList.reduce((sum, item) => sum + item.amount, 0);
 
       try {
+          let newBalance = 0;
           await runTransaction(db, async (transaction) => {
               const userRef = doc(db, 'users', user.id);
               const userDoc = await transaction.get(userRef);
-              if (!userDoc.exists()) throw "User Not Found";
+              if (!userDoc.exists()) throw new Error("User Not Found");
               const userData = userDoc.data() as User;
-              if (userData.balance < totalAmount) throw "Insufficient Balance";
+              const currentBalance = Number(userData.balance) || 0;
+              if (currentBalance < totalAmount) throw new Error("Insufficient Balance");
 
-              transaction.update(userRef, { balance: userData.balance - totalAmount });
+              newBalance = currentBalance - totalAmount;
+              transaction.update(userRef, { balance: newBalance });
               
               const txId = 'fee-bulk-' + Date.now();
               const txRef = doc(db, 'transactions', txId);
@@ -608,10 +644,15 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
                   transaction.set(betRef, betData);
               });
           });
+          
+          // Realtime update UI
+          setUser(prev => prev ? { ...prev, balance: newBalance } : null);
+          
           return true;
       } catch (e: any) {
           console.error("Bulk Bet Error:", e);
-          showNotification(typeof e === 'string' ? e : "Bet Failed", 'error');
+          const errorMsg = e.message || (typeof e === 'string' ? e : "Bet Failed");
+          showNotification(errorMsg, 'error');
           return false;
       }
   };

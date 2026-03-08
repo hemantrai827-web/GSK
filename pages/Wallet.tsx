@@ -2,7 +2,7 @@
 import React, { useState, useRef, useMemo, useEffect } from 'react';
 import { useApp } from '../context/AppContext';
 import { Button } from '../components/ui/Button';
-import { Wallet as WalletIcon, ArrowDownCircle, ArrowUpCircle, History, Gift, QrCode, FileText, Copy, Briefcase, Star, Lock, Loader2, CheckCircle, Dices, XCircle, ChevronRight, UploadCloud, Smartphone } from 'lucide-react';
+import { Wallet as WalletIcon, ArrowDownCircle, ArrowUpCircle, History, Gift, QrCode, FileText, Copy, Briefcase, Star, Lock, Loader2, CheckCircle, Dices, XCircle, ChevronRight, UploadCloud } from 'lucide-react';
 
 const QuickAmounts = ({ onSelect }: { onSelect: (val: string) => void }) => (
   <div className="flex gap-2 mb-4 overflow-x-auto pb-2 no-scrollbar">
@@ -14,17 +14,6 @@ const QuickAmounts = ({ onSelect }: { onSelect: (val: string) => void }) => (
   </div>
 );
 
-const PaymentMethod = ({ icon: Icon, label, selected, onClick }: { icon: any, label: string, selected: boolean, onClick: () => void }) => (
-    <button 
-        type="button"
-        onClick={onClick}
-        className={`flex flex-col items-center justify-center p-3 rounded-xl border transition-all duration-200 w-full ${selected ? 'bg-yellow-500/10 border-yellow-500 text-yellow-500' : 'bg-slate-800 border-slate-700 text-slate-400 hover:bg-slate-700'}`}
-    >
-        <Icon className={`w-6 h-6 mb-1 ${selected ? 'text-yellow-500' : 'text-slate-400'}`} />
-        <span className="text-xs font-bold">{label}</span>
-    </button>
-);
-
 export const Wallet: React.FC = () => {
   const { user, walletBalance, transactions, depositRequests, withdrawRequests, deposit, withdraw, referUser, requestSubAgent, bets, showNotification, uploadProof } = useApp();
   const [activeTab, setActiveTab] = useState<'deposit' | 'withdraw' | 'deposit_history' | 'withdraw_history' | 'bet_history' | 'referral_history' | 'refer'>('deposit');
@@ -34,7 +23,6 @@ export const Wallet: React.FC = () => {
   const [utr, setUtr] = useState('');
   const [depositorName, setDepositorName] = useState('');
   const [depositorMobile, setDepositorMobile] = useState('');
-  const [selectedMethod, setSelectedMethod] = useState<'GPAY' | 'PHONEPE' | 'PAYTM' | 'UPI'>('UPI');
   const [screenshot, setScreenshot] = useState<File | null>(null);
   
   // Withdraw State
@@ -49,9 +37,9 @@ export const Wallet: React.FC = () => {
   const [isChangingBank, setIsChangingBank] = useState(false);
   const [isSubmitting, setIsSubmitting] = useState(false);
 
-  // VPA Config - In real app, fetch from backend config
-  const PAYMENT_ADDRESS = "7224974021-2@ybl"; 
-  const MERCHANT_NAME = "GwaliorKing";
+  // VPA Config
+  const PAYMENT_ADDRESS = "exclusivehub@axl"; 
+  const MERCHANT_NAME = "Wallet Deposit";
 
   // Pre-fill user data
   useEffect(() => {
@@ -80,6 +68,14 @@ export const Wallet: React.FC = () => {
       if (e.target.files && e.target.files[0]) {
           setScreenshot(e.target.files[0]);
       }
+  };
+
+  const handlePaymentClick = () => {
+      const val = parseFloat(amount);
+      const isValid = !isNaN(val) && val > 0;
+      let uri = `upi://pay?pa=${PAYMENT_ADDRESS}&pn=${MERCHANT_NAME}&cu=INR`;
+      if (isValid) uri += `&am=${val}`;
+      window.location.href = uri;
   };
 
   const handleTransaction = async (e: React.FormEvent) => {
@@ -224,16 +220,6 @@ export const Wallet: React.FC = () => {
               <div className="grid md:grid-cols-2 gap-8">
                  {/* Left: Payment Gateway Simulator */}
                  <div className="space-y-6">
-                     <div>
-                         <label className="text-xs text-slate-400 font-bold uppercase mb-2 block">1. Select Payment Method</label>
-                         <div className="grid grid-cols-2 gap-2">
-                             <PaymentMethod icon={Smartphone} label="PhonePe" selected={selectedMethod === 'PHONEPE'} onClick={() => setSelectedMethod('PHONEPE')} />
-                             <PaymentMethod icon={Smartphone} label="GPay" selected={selectedMethod === 'GPAY'} onClick={() => setSelectedMethod('GPAY')} />
-                             <PaymentMethod icon={Smartphone} label="Paytm" selected={selectedMethod === 'PAYTM'} onClick={() => setSelectedMethod('PAYTM')} />
-                             <PaymentMethod icon={QrCode} label="Any UPI" selected={selectedMethod === 'UPI'} onClick={() => setSelectedMethod('UPI')} />
-                         </div>
-                     </div>
-                     
                      <div className="bg-white p-4 rounded-xl shadow-xl flex flex-col items-center">
                         <img src={dynamicQrSource} alt="Scan to Pay" className="w-48 h-48 object-contain mix-blend-multiply" />
                         <div className="mt-4 w-full">
@@ -244,6 +230,22 @@ export const Wallet: React.FC = () => {
                             </div>
                         </div>
                      </div>
+
+                     <div className="w-full space-y-3 mt-2 mb-4">
+                        <p className="text-sm text-slate-300 mb-2 text-center">Or tap a button below to pay via UPI app</p>
+                        <button onClick={handlePaymentClick} className="w-full flex items-center justify-center gap-2 bg-white text-black font-bold py-3 rounded-xl hover:bg-gray-100 transition-colors">
+                            <img src="https://upload.wikimedia.org/wikipedia/commons/thumb/f/f2/Google_Pay_Logo.svg/512px-Google_Pay_Logo.svg.png" alt="GPay" className="h-5 object-contain" />
+                            Pay with GPay
+                        </button>
+                        <button onClick={handlePaymentClick} className="w-full flex items-center justify-center gap-2 bg-[#5f259f] text-white font-bold py-3 rounded-xl hover:bg-[#4a1d7c] transition-colors">
+                            <img src="https://upload.wikimedia.org/wikipedia/commons/thumb/7/71/PhonePe_Logo.svg/512px-PhonePe_Logo.svg.png" alt="PhonePe" className="h-5 object-contain filter brightness-0 invert" />
+                            Pay with PhonePe
+                        </button>
+                        <button onClick={handlePaymentClick} className="w-full flex items-center justify-center gap-2 bg-[#00baf2] text-white font-bold py-3 rounded-xl hover:bg-[#0099c8] transition-colors">
+                            <img src="https://upload.wikimedia.org/wikipedia/commons/thumb/2/24/Paytm_Logo_%28standalone%29.svg/512px-Paytm_Logo_%28standalone%29.svg.png" alt="Paytm" className="h-4 object-contain filter brightness-0 invert" />
+                            Pay with Paytm
+                        </button>
+                    </div>
                  </div>
 
                  {/* Right: User Input Form */}
