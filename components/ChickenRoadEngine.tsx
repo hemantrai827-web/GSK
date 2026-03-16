@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { useApp } from '../context/AppContext';
 import { Button } from './ui/Button';
-import { Coins, Trophy, AlertCircle, PlayCircle, StopCircle, ArrowLeft } from 'lucide-react';
+import { Coins, Trophy, AlertCircle, PlayCircle, StopCircle, ArrowLeft, Loader2 } from 'lucide-react';
 import { addDoc, collection, doc, updateDoc, increment } from 'firebase/firestore';
 import { db } from '../firebase';
 
@@ -48,7 +48,7 @@ interface FloatingText {
 }
 
 export const ChickenRoadEngine: React.FC<ChickenRoadEngineProps> = ({ onBack }) => {
-  const { user, walletBalance, placeBet, addTransaction } = useApp();
+  const { user, walletBalance, placeBet, addTransaction, isBetting } = useApp();
   const canvasRef = useRef<HTMLCanvasElement>(null);
   
   const [gameState, setGameState] = useState<'IDLE' | 'PLAYING' | 'CRASHED' | 'CASHED_OUT'>('IDLE');
@@ -363,7 +363,7 @@ export const ChickenRoadEngine: React.FC<ChickenRoadEngineProps> = ({ onBack }) 
 
     if (user) {
       try {
-        await updateDoc(doc(db, 'users', user.id), { balance: increment(payout) });
+        await updateDoc(doc(db, 'users', user.id), { wallet_balance: increment(payout) });
         addTransaction({
             id: `cr-${Date.now()}`,
             userId: user.id,
@@ -499,9 +499,11 @@ export const ChickenRoadEngine: React.FC<ChickenRoadEngineProps> = ({ onBack }) 
               {gameState === 'IDLE' || gameState === 'CRASHED' || gameState === 'CASHED_OUT' ? (
                 <Button 
                   onClick={startGame} 
+                  disabled={isBetting}
                   className="w-full h-14 bg-gradient-to-r from-yellow-500 to-orange-500 hover:from-yellow-400 hover:to-orange-400 text-black font-black text-xl shadow-[0_0_20px_rgba(234,179,8,0.3)] hover:shadow-[0_0_30px_rgba(234,179,8,0.5)] transition-all rounded-xl"
                 >
-                  <PlayCircle className="w-6 h-6 mr-2" /> START GAME
+                  {isBetting ? <Loader2 className="w-6 h-6 mr-2 animate-spin" /> : <PlayCircle className="w-6 h-6 mr-2" />} 
+                  {isBetting ? 'STARTING...' : 'START GAME'}
                 </Button>
               ) : (
                 <Button 

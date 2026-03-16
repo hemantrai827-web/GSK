@@ -2,6 +2,7 @@
 import React, { useEffect, useRef, useState } from 'react';
 import { useApp } from '../context/AppContext';
 import { Button } from './ui/Button';
+import { Loader2 } from 'lucide-react';
 import { db } from '../firebase';
 import { doc, updateDoc, increment } from 'firebase/firestore';
 
@@ -9,7 +10,7 @@ const WIDTH = 400;
 const HEIGHT = 500;
 
 export const PlinkoEngine: React.FC<{ onBack: () => void }> = ({ onBack }) => {
-  const { user, walletBalance, placeBet, addTransaction } = useApp();
+  const { user, walletBalance, placeBet, addTransaction, isBetting } = useApp();
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const [bet, setBet] = useState(10);
   
@@ -58,7 +59,7 @@ export const PlinkoEngine: React.FC<{ onBack: () => void }> = ({ onBack }) => {
       
       const win = Math.floor(bet * mult);
       if (win > 0 && user) {
-          await updateDoc(doc(db, 'users', user.id), { balance: increment(win) });
+          await updateDoc(doc(db, 'users', user.id), { wallet_balance: increment(win) });
           
           if (betId) {
              updateDoc(doc(db, 'bets', betId), { 
@@ -162,7 +163,9 @@ export const PlinkoEngine: React.FC<{ onBack: () => void }> = ({ onBack }) => {
                 <span className="text-slate-400 font-bold px-2 text-xs">BET</span>
                 <input type="number" value={bet} onChange={e => setBet(Number(e.target.value))} className="bg-transparent w-full text-white font-bold text-lg outline-none" />
             </div>
-            <Button onClick={dropBall} variant="gold" className="px-8 font-bold text-lg">DROP</Button>
+            <Button onClick={dropBall} variant="gold" disabled={isBetting} className="px-8 font-bold text-lg">
+                {isBetting ? <Loader2 className="w-5 h-5 animate-spin" /> : 'DROP'}
+            </Button>
         </div>
         
         <div className="flex justify-between mt-2 text-xs text-slate-500 font-mono">

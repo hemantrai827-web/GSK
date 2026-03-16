@@ -15,7 +15,7 @@ export interface User {
   mobile?: string;
   password?: string;
   role: UserRole;
-  balance: number;
+  wallet_balance: number;
   lockedBalance?: number; // Funds locked in pending withdrawals
   referralCode: string;
   referredBy?: string;
@@ -71,10 +71,12 @@ export interface Bet {
   gameType: 'BAZAAR' | 'MATKA' | 'MINI_GAME' | 'SLOT';
   selection: string;
   amount: number;
-  status: 'PENDING' | 'WON' | 'LOST' | 'COMPLETED';
+  status: 'PENDING' | 'WON' | 'LOST' | 'COMPLETED' | 'active' | 'win' | 'lose';
   winAmount?: number;
   timestamp: number;
   roundId?: string; // Links bet to specific time slot
+  bet_number?: string;
+  bet_amount?: number;
 }
 
 export interface DepositRequest {

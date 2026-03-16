@@ -89,7 +89,7 @@ export const AgentPanel: React.FC = () => {
       return;
     }
 
-    if (user.balance < amount) {
+    if (user.wallet_balance < amount) {
       showNotification('Insufficient balance', 'error');
       return;
     }
@@ -101,12 +101,12 @@ export const AgentPanel: React.FC = () => {
       
       // 1. Deduct from agent
       await updateDoc(doc(db, 'users', user.id), {
-        balance: increment(-amount)
+        wallet_balance: increment(-amount)
       });
 
       // 2. Add to user
       await updateDoc(doc(db, 'users', transferUserId), {
-        balance: increment(amount)
+        wallet_balance: increment(amount)
       });
 
       // 3. Record transaction
@@ -192,7 +192,7 @@ export const AgentPanel: React.FC = () => {
 
             <div className="mb-6 p-4 bg-slate-900/50 rounded-xl border border-slate-700 text-center">
               <p className="text-xs text-slate-400 uppercase tracking-wider mb-1">Your Wallet Balance</p>
-              <p className="text-3xl font-mono font-bold text-green-400">₹{user?.balance || 0}</p>
+              <p className="text-3xl font-mono font-bold text-green-400">₹{user?.wallet_balance || 0}</p>
             </div>
 
             <form onSubmit={handleTransfer} className="space-y-4">

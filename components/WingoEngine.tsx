@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useCallback, useMemo } from 'react';
 import { useApp } from '../context/AppContext';
 import { Button } from './ui/Button';
-import { Clock, History, Trophy, CheckCircle, XCircle, RefreshCw, ArrowLeft, Zap, Check, ChevronRight } from 'lucide-react';
+import { Clock, History, Trophy, CheckCircle, XCircle, RefreshCw, ArrowLeft, Zap, Check, ChevronRight, Loader2 } from 'lucide-react';
 import { db } from '../firebase';
 import { doc, updateDoc, increment, writeBatch, collection } from 'firebase/firestore';
 
@@ -50,7 +50,7 @@ const seededRandom = (seed: string) => {
 };
 
 export const WingoEngine: React.FC<WingoProps> = ({ onBack, mode = '1min' }) => {
-    const { user, walletBalance, placeBet, bets } = useApp();
+    const { user, walletBalance, placeBet, bets, isBetting } = useApp();
     
     // Config based on mode
     const ROUND_DURATION = mode === '1min' ? 60 : 30;
@@ -200,7 +200,7 @@ export const WingoEngine: React.FC<WingoProps> = ({ onBack, mode = '1min' }) => 
             let hasUpdates = false;
 
             // Find pending bets where the roundId exists in our history (meaning round ended)
-            const pendingBets = myWingoBets.filter(b => b.status === 'PENDING' && b.roundId);
+            const pendingBets = myWingoBets.filter(b => b.status === 'active' && b.roundId);
 
             for (const bet of pendingBets) {
                 const result = history.find(h => h.periodId === bet.roundId);
@@ -224,34 +224,26 @@ export const WingoEngine: React.FC<WingoProps> = ({ onBack, mode = '1min' }) => 
                     let win = false;
                     let multiplier = 0;
 
-                    // Logic with 2% Commission (0.99 factor roughly maps 2.0 -> 1.98)
-                    // Explicit multipliers as per request (100 -> 198)
+                    // Logic with 98x multiplier for all wins as requested
                     
                     if (type === 'NUMBER') {
-                        // 9x -> 8.82x (9 * 0.98)
-                        if (parseInt(val) === result.number) { win = true; multiplier = 8.82; }
+                        if (parseInt(val) === result.number) { win = true; multiplier = 98; }
                     }
                     else if (type === 'COLOR') {
                         if (val === 'violet') {
-                            // 4.5x -> 4.41x (4.5 * 0.98)
-                            if (result.number === 0 || result.number === 5) { win = true; multiplier = 4.41; }
+                            if (result.number === 0 || result.number === 5) { win = true; multiplier = 98; }
                         }
                         else if (val === 'green') {
-                            // 2x -> 1.98x
-                            if ([1,3,7,9].includes(result.number)) { win = true; multiplier = 1.98; }
-                            // 1.5x -> 1.47x
-                            else if (result.number === 5) { win = true; multiplier = 1.47; }
+                            if ([1,3,7,9].includes(result.number)) { win = true; multiplier = 98; }
+                            else if (result.number === 5) { win = true; multiplier = 98; }
                         }
                         else if (val === 'red') {
-                             // 2x -> 1.98x
-                            if ([2,4,6,8].includes(result.number)) { win = true; multiplier = 1.98; }
-                             // 1.5x -> 1.47x
-                            else if (result.number === 0) { win = true; multiplier = 1.47; }
+                            if ([2,4,6,8].includes(result.number)) { win = true; multiplier = 98; }
+                            else if (result.number === 0) { win = true; multiplier = 98; }
                         }
                     }
                     else if (type === 'SIZE') {
-                        // 2x -> 1.98x
-                        if (val === result.size) { win = true; multiplier = 1.98; }
+                        if (val === result.size) { win = true; multiplier = 98; }
                     }
 
                     const winAmount = win ? Math.floor(bet.amount * multiplier) : 0;
@@ -268,7 +260,7 @@ export const WingoEngine: React.FC<WingoProps> = ({ onBack, mode = '1min' }) => 
                     // Update User Balance & Add Transaction if won
                     if (win) {
                         const userRef = doc(db, 'users', user.id);
-                        batch.update(userRef, { balance: increment(winAmount) });
+                        batch.update(userRef, { wallet_balance: increment(winAmount) });
                         
                         const txRef = doc(collection(db, 'transactions'));
                         batch.set(txRef, {
@@ -533,8 +525,8 @@ export const WingoEngine: React.FC<WingoProps> = ({ onBack, mode = '1min' }) => 
                                         <span className="text-yellow-500 font-bold mr-2">₹</span>
                                         <input type="number" value={betAmount} onChange={(e) => setBetAmount(Number(e.target.value))} className="bg-transparent w-full text-white font-bold text-lg outline-none" />
                                     </div>
-                                    <Button onClick={handleBet} variant="gold" className="flex-[2] py-4 text-lg shadow-lg shadow-yellow-500/20">
-                                        PLACE BET
+                                    <Button onClick={handleBet} variant="gold" disabled={isBetting} className="flex-[2] py-4 text-lg shadow-lg shadow-yellow-500/20">
+                                        {isBetting ? <Loader2 className="w-5 h-5 mr-2 animate-spin" /> : 'PLACE BET'}
                                     </Button>
                                 </div>
                             </div>
@@ -565,7 +557,7 @@ export const WingoEngine: React.FC<WingoProps> = ({ onBack, mode = '1min' }) => 
                                      {myWingoBets.length === 0 ? (
                                          <tr><td colSpan={4} className="p-8 text-center text-slate-500 italic">No bets placed yet.</td></tr>
                                      ) : (
-                                         myWingoBets.map(bet => {
+                                         myWingoBets.slice(0, 10).map(bet => {
                                              let displaySelect = bet.selection;
                                              if (bet.selection.includes(':')) displaySelect = bet.selection.split(':')[1];
                                              
@@ -578,18 +570,18 @@ export const WingoEngine: React.FC<WingoProps> = ({ onBack, mode = '1min' }) => 
                                                          <span className="font-bold uppercase text-white bg-slate-800 px-2 py-1 rounded text-xs border border-slate-700">{displaySelect}</span>
                                                      </td>
                                                      <td className="p-4">
-                                                         {bet.status === 'PENDING' ? (
-                                                             <span className="text-xs text-yellow-500 animate-pulse font-bold">WAIT</span>
-                                                         ) : (
-                                                             <span className={`text-xs font-bold ${bet.status === 'WON' ? 'text-green-400' : 'text-red-400'}`}>
-                                                                 {bet.status}
-                                                             </span>
-                                                         )}
-                                                     </td>
-                                                     <td className="p-4 text-right">
-                                                         <span className={`text-xs font-bold px-2 py-1 rounded ${bet.status === 'WON' ? 'bg-green-500/20 text-green-400' : bet.status === 'LOST' ? 'bg-red-500/10 text-red-400' : 'text-slate-500'}`}>
-                                                             {bet.status === 'WON' ? `+₹${bet.winAmount}` : bet.status === 'LOST' ? `-₹${bet.amount}` : '-'}
-                                                         </span>
+                                                        {bet.status === 'active' || bet.status === 'PENDING' ? (
+                                                            <span className="text-xs text-yellow-500 animate-pulse font-bold">WAIT</span>
+                                                        ) : (
+                                                            <span className={`text-xs font-bold ${bet.status === 'WON' || bet.status === 'win' ? 'text-green-400' : 'text-red-400'}`}>
+                                                                {bet.status === 'WON' || bet.status === 'win' ? 'WON' : 'LOST'}
+                                                            </span>
+                                                        )}
+                                                    </td>
+                                                    <td className="p-4 text-right">
+                                                        <span className={`text-xs font-bold px-2 py-1 rounded ${bet.status === 'WON' || bet.status === 'win' ? 'bg-green-500/20 text-green-400' : bet.status === 'LOST' || bet.status === 'lose' ? 'bg-red-500/10 text-red-400' : 'text-slate-500'}`}>
+                                                            {bet.status === 'WON' || bet.status === 'win' ? `+₹${bet.winAmount}` : bet.status === 'LOST' || bet.status === 'lose' ? `-₹${bet.amount || bet.bet_amount}` : '-'}
+                                                        </span>
                                                      </td>
                                                  </tr>
                                              );
@@ -616,7 +608,7 @@ export const WingoEngine: React.FC<WingoProps> = ({ onBack, mode = '1min' }) => 
                                      </tr>
                                  </thead>
                                  <tbody className="divide-y divide-white/5">
-                                     {history.map(rec => (
+                                     {history.slice(0, 10).map(rec => (
                                          <tr key={rec.periodId} className="hover:bg-white/5">
                                              <td className="p-3 text-slate-300 font-mono text-lg tracking-widest">{rec.periodId.slice(-4)}</td>
                                              <td className="p-3">

@@ -47,7 +47,9 @@ interface AppContextType {
   rejectWithdraw: (id: string) => Promise<void>;
   uploadProof: (file: File) => Promise<string | null>;
   placeBet: (gameId: string, gameType: 'BAZAAR' | 'MATKA' | 'MINI_GAME' | 'SLOT', selection: string, amount: number, roundId?: string) => Promise<string | null>;
+  processGameWinnings: (gameId: string, result: string, roundId?: string) => Promise<void>;
   placeBulkBets: (gameId: string, gameType: 'BAZAAR' | 'MATKA', betsList: { selection: string; amount: number }[], roundId?: string) => Promise<boolean>;
+  isBetting: boolean;
   
   // Slot Specific
   handleSlotSpin: (gameId: string, betAmount: number) => Promise<SlotSpinResult | null>;
@@ -82,6 +84,7 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
   const [depositRequests, setDepositRequests] = useState<DepositRequest[]>([]);
   const [withdrawRequests, setWithdrawRequests] = useState<any[]>([]);
   const [bets, setBets] = useState<Bet[]>([]);
+  const [isBetting, setIsBetting] = useState(false);
   const [connectionStatus, setConnectionStatus] = useState<'CONNECTED' | 'DISCONNECTED' | 'ERROR'>('CONNECTED');
   const [notification, setNotification] = useState<Notification | null>(null);
   const prevTransactionsRef = useRef<Transaction[]>([]);
@@ -137,10 +140,9 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
 
   useEffect(() => {
     let unsubUser = () => {};
-    let unsubAllUsers = () => {};
     let unsubSettings = () => {};
-    let unsubResults = () => {};
-    let unsubBets = () => {};
+
+    let unsubGames = () => {};
 
     try {
         if (user?.id) {
@@ -163,10 +165,10 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
             });
 
             if (user.role === 'ADMIN' || user.role === 'AGENT') {
-                unsubAllUsers = onSnapshot(collection(db, 'users'), (snap) => {
+                getDocs(collection(db, 'users')).then((snap) => {
                     const usersList = snap.docs.map(d => ({ id: d.id, ...sanitize(d.data()) } as User));
                     setAllUsers(usersList);
-                }, (err) => console.error("All Users Sync Error:", err));
+                }).catch((err) => console.error("All Users Sync Error:", err));
             } else {
                 setAllUsers([]);
             }
@@ -177,13 +179,13 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
             } else {
                 betsQ = query(collection(db, 'bets'), where('userId', '==', user.id));
             }
-            unsubBets = onSnapshot(betsQ, (snap) => {
+            getDocs(betsQ).then((snap) => {
                 const fetchedBets = snap.docs.map(d => ({ id: d.id, ...sanitize(d.data()) } as Bet));
                 if (user.role !== 'ADMIN' && user.role !== 'AGENT') {
                     fetchedBets.sort((a, b) => b.timestamp - a.timestamp);
                 }
                 setBets(fetchedBets);
-            }, (err) => console.error("Bets Sync Error:", err));
+            }).catch((err) => console.error("Bets Sync Error:", err));
         }
 
         unsubSettings = onSnapshot(collection(db, 'settings'), (snap) => {
@@ -196,9 +198,12 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
                     if (data.simulatedActivity !== undefined) setSimulatedActivityEnabled(data.simulatedActivity);
                 }
             });
-        }, (err) => console.error("Settings Sync Error:", err));
+        }, (err) => {
+            console.error("Settings Sync Error:", err);
+            setConnectionStatus('ERROR');
+        });
 
-        const unsubGames = onSnapshot(collection(db, 'games'), (snap) => {
+        unsubGames = onSnapshot(collection(db, 'games'), (snap) => {
             const now = Date.now();
             const list = snap.docs.map(doc => {
                 const data = doc.data() as any;
@@ -218,11 +223,14 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
                     result_number: validResult
                 };
             });
-            const sortedList = list.sort((a, b) => (a.hour_slot || 0) - (b.hour_slot || 0));
+            const sortedList = list.sort((a, b) => Number(a.hour_slot || 0) - Number(b.hour_slot || 0));
             setGames(sortedList);
-        }, (err) => console.error("Games Sync Error:", err));
+        }, (err) => {
+            console.error("Games Sync Error:", err);
+            setConnectionStatus('ERROR');
+        });
 
-        unsubResults = onSnapshot(query(collection(db, 'results'), orderBy('publishTime', 'desc'), limit(300)), (snap) => {
+        getDocs(query(collection(db, 'results'), orderBy('publishTime', 'desc'), limit(300))).then((snap) => {
             const results = snap.docs.map(d => {
                 const data = sanitize(d.data());
                 return {
@@ -232,20 +240,17 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
                 } as ResultLog;
             });
             setRawResults(results);
-        }, (err) => console.error("Results Sync Error:", err));
+        }).catch((err) => console.error("Results Sync Error:", err));
     } catch (e) {
         console.error("Firestore subscription setup failed", e);
     }
 
-    return () => { unsubUser(); unsubAllUsers(); unsubSettings(); unsubResults(); unsubBets(); };
+    return () => { unsubUser(); unsubSettings(); unsubGames(); };
   }, [user?.id, user?.role]); 
 
   useEffect(() => {
       if (!user) { setTransactions([]); setDepositRequests([]); setWithdrawRequests([]); return; }
       let qTx, qDep, qWd;
-      let unsubTx = () => {};
-      let unsubDep = () => {};
-      let unsubWd = () => {};
       try {
         const txRef = collection(db, 'transactions');
         const depRef = collection(db, 'deposit_requests');
@@ -261,15 +266,15 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
             qWd = query(wdRef, where('userId', '==', user.id));
         }
         
-        unsubTx = onSnapshot(qTx, (snap) => {
+        getDocs(qTx).then((snap) => {
             const fetchedTxs = snap.docs.map(d => ({ id: d.id, ...sanitize(d.data()) } as Transaction));
             if (user.role !== 'ADMIN' && user.role !== 'AGENT' && user.role !== 'SUB_AGENT') {
                 fetchedTxs.sort((a, b) => b.timestamp - a.timestamp);
             }
             setTransactions(fetchedTxs);
-        }, (err) => console.error("Tx sync error:", err));
+        }).catch((err) => console.error("Tx sync error:", err));
 
-        unsubDep = onSnapshot(qDep, (snap) => {
+        getDocs(qDep).then((snap) => {
             const fetchedDeps = snap.docs.map(d => ({ id: d.id, ...sanitize(d.data()) } as DepositRequest));
             if (user.role !== 'ADMIN' && user.role !== 'AGENT' && user.role !== 'SUB_AGENT') {
                 fetchedDeps.sort((a, b) => {
@@ -279,18 +284,17 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
                 });
             }
             setDepositRequests(fetchedDeps);
-        }, (err) => console.error("DepositRequests sync error:", err));
+        }).catch((err) => console.error("DepositRequests sync error:", err));
         
-        unsubWd = onSnapshot(qWd, (snap) => {
+        getDocs(qWd).then((snap) => {
             const fetchedWds = snap.docs.map(d => ({ id: d.id, ...sanitize(d.data()) }));
             if (user.role !== 'ADMIN' && user.role !== 'AGENT' && user.role !== 'SUB_AGENT') {
                 fetchedWds.sort((a, b) => b.timestamp - a.timestamp);
             }
             setWithdrawRequests(fetchedWds);
-        }, (err) => console.error("WithdrawRequests sync error:", err));
+        }).catch((err) => console.error("WithdrawRequests sync error:", err));
         
-        return () => { unsubTx(); unsubDep(); unsubWd(); };
-      } catch (e) { console.error("Tx sync error", e); return () => { unsubTx(); unsubDep(); unsubWd(); }; }
+      } catch (e) { console.error("Tx sync error", e); }
   }, [user?.role, user?.id]);
 
   useEffect(() => {
@@ -316,14 +320,22 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
     if (!result || result === 'XX' || result === 'XXX') return;
     try {
         const betsRef = collection(db, 'bets');
-        let q = query(betsRef, where('gameId', '==', gameId), where('status', '==', 'PENDING'));
+        let q = query(betsRef, where('gameId', '==', gameId), where('status', '==', 'active'));
         if (roundId) q = query(q, where('roundId', '==', roundId));
 
         const snapshot = await getDocs(q);
+        
+        // Save game result to game_history
+        const historyRef = doc(collection(db, 'game_history'));
+        await setDoc(historyRef, {
+            game_name: gameId,
+            result_number: result,
+            result_date: Date.now()
+        });
+
         if (snapshot.empty) return;
 
         const batch = writeBatch(db);
-        const isJackpot = gameId.toLowerCase().includes('jackpot');
         let processedCount = 0;
 
         snapshot.docs.forEach(docSnap => {
@@ -333,35 +345,27 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
             let winAmount = 0;
             let isWin = false;
 
-            if (bet.selection === result) {
+            // Check if bet_number matches result_number
+            if (bet.bet_number === result || bet.selection === result) {
                 isWin = true;
-                if (isJackpot) {
-                    winAmount = bet.amount * GAME_RULES.RATE_JACKPOT;
-                } else {
-                    const num = parseInt(bet.selection);
-                    if (!isNaN(num)) {
-                        if (num < GAME_RULES.CUTOFF_NUMBER) {
-                            winAmount = bet.amount * GAME_RULES.RATE_BELOW_CUTOFF;
-                        } 
-                        else {
-                            winAmount = bet.amount * GAME_RULES.RATE_ABOVE_CUTOFF;
-                        }
-                    } else {
-                        winAmount = bet.amount * 90; 
-                    }
-                }
+                const betAmount = bet.bet_amount || bet.amount || 0;
+                winAmount = betAmount * 98;
             }
 
             if (isWin && winAmount > 0) {
-                batch.update(docSnap.ref, { status: 'WON', winAmount });
-                batch.update(doc(db, 'users', bet.userId), { balance: increment(winAmount) });
+                batch.update(docSnap.ref, { status: 'win', winAmount });
+                batch.update(doc(db, 'users', bet.userId), { wallet_balance: increment(winAmount) });
                 const txRef = doc(collection(db, 'transactions'));
                 batch.set(txRef, {
-                    id: txRef.id, userId: bet.userId, type: 'GAME_WIN', amount: winAmount,
-                    status: 'COMPLETED', timestamp: Date.now(), description: `Win: ${gameId} (${bet.selection})`
+                    userId: bet.userId, 
+                    type: 'GAME_WIN', 
+                    amount: winAmount,
+                    game_name: gameId,
+                    status: 'COMPLETED',
+                    timestamp: Date.now()
                 });
             } else {
-                batch.update(docSnap.ref, { status: 'LOST', winAmount: 0 });
+                batch.update(docSnap.ref, { status: 'lose', winAmount: 0 });
             }
             processedCount++;
         });
@@ -381,13 +385,14 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
     try {
         let spinResult: SlotSpinResult | null = null;
         let newBalance = 0;
+        let betData: any = {};
         
         await runTransaction(db, async (transaction) => {
             const userRef = doc(db, 'users', user.id);
             const userDoc = await transaction.get(userRef);
             if (!userDoc.exists()) throw new Error("User Not Found");
             const userData = userDoc.data() as User;
-            const currentBalance = Number(userData.balance) || 0;
+            const currentBalance = Number(userData.wallet_balance) || 0;
 
             if (currentBalance < betAmount) {
                 throw new Error("Insufficient Balance");
@@ -396,10 +401,10 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
             spinResult = calculateSlotResult(gameConfig, betAmount);
             newBalance = currentBalance - betAmount + spinResult.totalWin;
             
-            transaction.update(userRef, { balance: newBalance });
+            transaction.update(userRef, { wallet_balance: newBalance });
 
             const betRef = doc(collection(db, 'bets'));
-            const betData: any = {
+            betData = {
                 id: betRef.id, 
                 userId: user.id, 
                 gameId: `slot_${gameId}`, 
@@ -415,25 +420,22 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
                 timestamp: Date.now()
             };
             transaction.set(betRef, betData);
-
-            if (spinResult.isWin) {
-                const winTxRef = doc(collection(db, 'transactions'));
-                transaction.set(winTxRef, {
-                    id: winTxRef.id, userId: user.id, type: 'GAME_WIN', amount: spinResult.totalWin,
-                    status: 'COMPLETED', timestamp: Date.now(), description: `Win: ${gameConfig.name}`
-                });
-            }
         });
 
         // Realtime update UI
-        setUser(prev => prev ? { ...prev, balance: newBalance } : null);
+        setUser(prev => prev ? { ...prev, wallet_balance: newBalance } : null);
+        setBets(prev => [{ ...betData } as Bet, ...prev]);
 
         return spinResult;
 
     } catch (e: any) {
         console.error("Slot Spin Error:", e);
-        const errorMsg = e.message || (typeof e === 'string' ? e : "Spin Failed");
-        showNotification(errorMsg, 'error');
+        const errorMsg = e.message || (typeof e === 'string' ? e : "Server busy. Please try again.");
+        if (errorMsg.includes("Quota") || errorMsg.includes("quota")) {
+            showNotification("Server busy. Please try again.", 'error');
+        } else {
+            showNotification(errorMsg, 'error');
+        }
         return null;
     }
   };
@@ -446,12 +448,33 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
         
         if (!snapE.empty || !snapM.empty) { alert("User already exists!"); return; }
 
+        let referrerId = '';
+        if (referralCode) {
+            const qRef = query(collection(db, 'users'), where('referralCode', '==', referralCode));
+            const snapRef = await getDocs(qRef);
+            if (!snapRef.empty) {
+                referrerId = snapRef.docs[0].id;
+            }
+        }
+
         const newUser: User = {
             id: 'u' + Date.now(), username: email.split('@')[0], email, mobile, password,
-            role: 'USER', balance: 0, referralCode: Math.random().toString(36).substring(2, 8).toUpperCase(),
-            referredBy: referralCode, depositCount: 0, validReferralCount: 0
+            role: 'USER', wallet_balance: 0, referralCode: Math.random().toString(36).substring(2, 8).toUpperCase(),
+            referredBy: referrerId || undefined, depositCount: 0, validReferralCount: 0
         };
         await setDoc(doc(db, 'users', newUser.id), newUser);
+
+        if (referrerId) {
+            const referralId = 'ref-' + Date.now();
+            await setDoc(doc(db, 'referrals', referralId), {
+                id: referralId,
+                referrerId,
+                referredUserId: newUser.id,
+                commission: 0,
+                timestamp: Date.now()
+            });
+        }
+
         setUser(newUser);
       } catch(e) { console.error("Reg error", e); alert("Registration failed"); }
   };
@@ -461,7 +484,7 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
       
       const newUser: User = {
           id: role.toLowerCase() + '-' + Date.now(), username, email, mobile, password, role,
-          balance: 0, referralCode: role.substring(0,3) + Math.random().toString(36).substring(2, 6).toUpperCase(),
+          wallet_balance: 0, referralCode: role.substring(0,3) + Math.random().toString(36).substring(2, 6).toUpperCase(),
           depositCount: 0, validReferralCount: 0, isSubAgentPending: false
       };
       
@@ -495,7 +518,7 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
                       mobile: '0000000000',
                       password: cleanPass,
                       role: 'ADMIN',
-                      balance: 10000,
+                      wallet_balance: 10000,
                       referralCode: 'ADMIN001',
                       depositCount: 0,
                       validReferralCount: 0
@@ -503,11 +526,11 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
                   await setDoc(doc(db, 'users', adminUser.id), adminUser);
               } else {
                   adminUser = { id: snap.docs[0].id, ...sanitize(snap.docs[0].data()) } as User;
-                  if (adminUser.role !== 'ADMIN' || adminUser.password !== cleanPass || adminUser.balance < 10000) {
-                      await updateDoc(doc(db, 'users', adminUser.id), { role: 'ADMIN', password: cleanPass, balance: Math.max(adminUser.balance, 10000) });
+                  if (adminUser.role !== 'ADMIN' || adminUser.password !== cleanPass || (adminUser.wallet_balance || 0) < 10000) {
+                      await updateDoc(doc(db, 'users', adminUser.id), { role: 'ADMIN', password: cleanPass, wallet_balance: Math.max(adminUser.wallet_balance || 0, 10000) });
                       adminUser.role = 'ADMIN';
                       adminUser.password = cleanPass;
-                      adminUser.balance = Math.max(adminUser.balance, 10000);
+                      adminUser.wallet_balance = Math.max(adminUser.wallet_balance || 0, 10000);
                   }
               }
               setUser(adminUser);
@@ -549,112 +572,190 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
   const logout = () => { setUser(null); setAllUsers([]); };
 
   const placeBet = async (gameId: string, gameType: 'BAZAAR' | 'MATKA' | 'MINI_GAME' | 'SLOT', selection: string, amount: number, roundId?: string): Promise<string | null> => {
-      if (!user) return null;
+      if (!user || isBetting) return null;
       if (amount <= 0) { showNotification("Invalid Amount", 'error'); return null; }
 
+      setIsBetting(true);
       const betId = 'bet-' + Date.now() + Math.random().toString(36).substr(2, 5);
       const betRef = doc(db, 'bets', betId);
       const userRef = doc(db, 'users', user.id);
-      const txRef = doc(collection(db, 'transactions'));
-      const txId = 'fee-' + Date.now();
 
-      try {
-        let newBalance = 0;
-        await runTransaction(db, async (transaction) => {
-            const userDoc = await transaction.get(userRef);
-            if (!userDoc.exists()) throw new Error("User Not Found");
-            const userData = userDoc.data() as User;
-            const currentBalance = Number(userData.balance) || 0;
-            if (currentBalance < amount) throw new Error("Insufficient Balance");
+      let retries = 3;
+      while (retries > 0) {
+          try {
+            let newBalance = 0;
+            let betData: any = {};
+            await runTransaction(db, async (transaction) => {
+                const userDoc = await transaction.get(userRef);
+                if (!userDoc.exists()) throw new Error("User Not Found");
+                const userData = userDoc.data() as User;
+                const currentBalance = Number(userData.wallet_balance) || 0;
+                if (currentBalance < amount) throw new Error("Insufficient Balance");
 
-            newBalance = currentBalance - amount;
-            let status: 'PENDING' | 'COMPLETED' = 'PENDING';
-            if (gameType === 'MINI_GAME' && !gameId.includes('wingo') && !gameId.includes('ludo') && !gameId.includes('aviator') && !gameId.includes('plinko')) {
-                status = 'COMPLETED'; 
-            }
+                newBalance = currentBalance - amount;
+                let status: 'active' | 'COMPLETED' = 'active';
+                if (gameType === 'MINI_GAME' && !gameId.includes('wingo') && !gameId.includes('ludo') && !gameId.includes('aviator') && !gameId.includes('plinko')) {
+                    status = 'COMPLETED'; 
+                }
 
-            const betData: any = {
-                id: betId, 
-                userId: user.id, 
-                gameId, 
-                game_name: selection, // Map selection to game_name for mini games
-                gameType, 
-                selection, 
-                amount,
-                bet_amount: amount, // Add bet_amount field
-                multiplier: 0, // Default multiplier
-                result: status === 'COMPLETED' ? 'PENDING' : status, // Default result
-                status, 
-                timestamp: Date.now()
-            };
-            if (roundId) betData.roundId = roundId;
+                betData = {
+                    id: betId, 
+                    userId: user.id, 
+                    gameId, 
+                    game_name: gameId, 
+                    gameType, 
+                    selection, 
+                    bet_number: selection,
+                    amount,
+                    bet_amount: amount, 
+                    multiplier: 0, 
+                    result: status === 'COMPLETED' ? 'active' : status, 
+                    status, 
+                    timestamp: Date.now()
+                };
+                if (roundId) betData.roundId = roundId;
 
-            transaction.set(betRef, betData);
-            transaction.update(userRef, { balance: newBalance });
-            transaction.set(txRef, {
-                id: txId, userId: user.id, type: 'GAME_FEE', amount, status: 'COMPLETED',
-                timestamp: Date.now(), description: `Bet: ${selection}`
+                const txId = 'tx-' + Date.now() + Math.random().toString(36).substr(2, 5);
+                const txRef = doc(db, 'transactions', txId);
+                const txData = {
+                    id: txId,
+                    userId: user.id,
+                    type: 'bet',
+                    amount: amount,
+                    status: 'success',
+                    timestamp: Date.now(),
+                    gameId: gameId,
+                    betId: betId
+                };
+
+                transaction.update(userRef, { wallet_balance: newBalance });
+                transaction.set(betRef, betData);
+                transaction.set(txRef, txData);
             });
-        });
-        
-        // Realtime update UI
-        setUser(prev => prev ? { ...prev, balance: newBalance } : null);
-        
-        return betId;
-      } catch (e: any) {
-        console.error("Bet Error:", e);
-        const errorMsg = e.message || (typeof e === 'string' ? e : "Bet Failed. Try again.");
-        showNotification(errorMsg, 'error');
-        return null;
+            
+            // Realtime update UI
+            setUser(prev => prev ? { ...prev, wallet_balance: newBalance } : null);
+            setBets(prev => [{ ...betData } as Bet, ...prev]);
+            
+            setIsBetting(false);
+            return betId;
+          } catch (e: any) {
+            console.error("Bet Error:", e);
+            const errorMsg = e.message || (typeof e === 'string' ? e : "");
+            
+            if (errorMsg.includes("Quota") || errorMsg.includes("quota")) {
+                showNotification("Database quota exceeded. Please try again later.", 'error');
+                setIsBetting(false);
+                return null;
+            }
+            
+            if (errorMsg === "Insufficient Balance" || errorMsg === "User Not Found" || errorMsg === "Invalid Amount") {
+                showNotification(errorMsg, 'error');
+                setIsBetting(false);
+                return null;
+            }
+            retries--;
+            if (retries === 0) {
+                showNotification("Server busy, please try again", 'error');
+                setIsBetting(false);
+                return null;
+            }
+            await new Promise(resolve => setTimeout(resolve, 1000));
+          }
       }
+      setIsBetting(false);
+      return null;
   };
 
   const placeBulkBets = async (gameId: string, gameType: 'BAZAAR' | 'MATKA', betsList: { selection: string; amount: number }[], roundId?: string) => {
-      if (!user || betsList.length === 0) return false;
+      if (!user || betsList.length === 0 || isBetting) return false;
       const totalAmount = betsList.reduce((sum, item) => sum + item.amount, 0);
 
-      try {
-          let newBalance = 0;
-          await runTransaction(db, async (transaction) => {
-              const userRef = doc(db, 'users', user.id);
-              const userDoc = await transaction.get(userRef);
-              if (!userDoc.exists()) throw new Error("User Not Found");
-              const userData = userDoc.data() as User;
-              const currentBalance = Number(userData.balance) || 0;
-              if (currentBalance < totalAmount) throw new Error("Insufficient Balance");
+      setIsBetting(true);
+      let retries = 3;
+      while (retries > 0) {
+          try {
+              let newBalance = 0;
+              let createdBets: any[] = [];
+              await runTransaction(db, async (transaction) => {
+                  const userRef = doc(db, 'users', user.id);
+                  const userDoc = await transaction.get(userRef);
+                  if (!userDoc.exists()) throw new Error("User Not Found");
+                  const userData = userDoc.data() as User;
+                  const currentBalance = Number(userData.wallet_balance) || 0;
+                  if (currentBalance < totalAmount) throw new Error("Insufficient Balance");
 
-              newBalance = currentBalance - totalAmount;
-              transaction.update(userRef, { balance: newBalance });
-              
-              const txId = 'fee-bulk-' + Date.now();
-              const txRef = doc(db, 'transactions', txId);
-              transaction.set(txRef, {
-                  id: txId, userId: user.id, type: 'GAME_FEE', amount: totalAmount, status: 'COMPLETED',
-                  timestamp: Date.now(), description: `Bulk Bet: ${gameId}`
-              });
+                  newBalance = currentBalance - totalAmount;
+                  transaction.update(userRef, { wallet_balance: newBalance });
 
-              betsList.forEach(item => {
-                  const betId = 'bet-' + Date.now() + Math.random().toString(36).substr(2, 5);
-                  const betRef = doc(db, 'bets', betId);
-                  const betData: any = {
-                      id: betId, userId: user.id, gameId, gameType, selection: item.selection, amount: item.amount,
-                      status: 'PENDING', timestamp: Date.now()
+                  betsList.forEach(item => {
+                      const betId = 'bet-' + Date.now() + Math.random().toString(36).substr(2, 5);
+                      const betRef = doc(db, 'bets', betId);
+                      const betData: any = {
+                          id: betId, 
+                          userId: user.id, 
+                          gameId, 
+                          game_name: gameId,
+                          gameType, 
+                          selection: item.selection, 
+                          bet_number: item.selection,
+                          amount: item.amount,
+                          bet_amount: item.amount,
+                          status: 'active', 
+                          timestamp: Date.now()
+                      };
+                      if (roundId) betData.roundId = roundId;
+                      transaction.set(betRef, betData);
+                      createdBets.push(betData);
+                  });
+
+                  const txId = 'tx-' + Date.now() + Math.random().toString(36).substr(2, 5);
+                  const txRef = doc(db, 'transactions', txId);
+                  const txData = {
+                      id: txId,
+                      userId: user.id,
+                      type: 'bet',
+                      amount: totalAmount,
+                      status: 'success',
+                      timestamp: Date.now(),
+                      gameId: gameId,
+                      description: 'Bulk Bet'
                   };
-                  if (roundId) betData.roundId = roundId;
-                  transaction.set(betRef, betData);
+                  transaction.set(txRef, txData);
               });
-          });
-          
-          // Realtime update UI
-          setUser(prev => prev ? { ...prev, balance: newBalance } : null);
-          
-          return true;
-      } catch (e: any) {
-          console.error("Bulk Bet Error:", e);
-          const errorMsg = e.message || (typeof e === 'string' ? e : "Bet Failed");
-          showNotification(errorMsg, 'error');
-          return false;
+              
+              // Realtime update UI
+              setUser(prev => prev ? { ...prev, wallet_balance: newBalance } : null);
+              setBets(prev => [...createdBets, ...prev]);
+              
+              setIsBetting(false);
+              return true;
+          } catch (e: any) {
+              console.error("Bulk Bet Error:", e);
+              const errorMsg = e.message || (typeof e === 'string' ? e : "");
+              
+              if (errorMsg.includes("Quota") || errorMsg.includes("quota")) {
+                  showNotification("Database quota exceeded. Please try again later.", 'error');
+                  setIsBetting(false);
+                  return false;
+              }
+              
+              if (errorMsg === "Insufficient Balance" || errorMsg === "User Not Found") {
+                  showNotification(errorMsg, 'error');
+                  setIsBetting(false);
+                  return false;
+              }
+              retries--;
+              if (retries === 0) {
+                  showNotification("Server busy, please try again", 'error');
+                  setIsBetting(false);
+                  return false;
+              }
+              await new Promise(resolve => setTimeout(resolve, 1000));
+          }
       }
+      setIsBetting(false);
+      return false;
   };
 
   const deleteResult = async (id: string) => {
@@ -754,6 +855,7 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
               screenshotUrl: screenshotUrl
           };
           await setDoc(doc(db, 'deposit_requests', reqId), sanitize(reqData));
+          setDepositRequests(prev => [{ ...reqData, createdAt: { toMillis: () => Date.now() } } as any, ...prev]);
           return true;
       } catch (e: any) {
           console.error("Deposit Error:", e);
@@ -765,6 +867,24 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
   const approveDeposit = async (id: string): Promise<void> => {
       console.log("Approve ID:", id);
       try {
+          const reqDocRef = doc(db, 'deposit_requests', id);
+          const reqDocSnap = await getDoc(reqDocRef);
+          if (!reqDocSnap.exists()) throw new Error("Request not found");
+          const reqDataInit = reqDocSnap.data() as DepositRequest;
+          
+          let referralDocId: string | null = null;
+          const userDocSnap = await getDoc(doc(db, 'users', reqDataInit.userId));
+          if (userDocSnap.exists()) {
+              const userDataInit = userDocSnap.data() as User;
+              if (userDataInit.referredBy) {
+                  const q = query(collection(db, 'referrals'), where('referrerId', '==', userDataInit.referredBy), where('referredUserId', '==', userDataInit.id));
+                  const querySnapshot = await getDocs(q);
+                  if (!querySnapshot.empty) {
+                      referralDocId = querySnapshot.docs[0].id;
+                  }
+              }
+          }
+
           await runTransaction(db, async (transaction) => {
               const reqRef = doc(db, 'deposit_requests', id);
               const reqDoc = await transaction.get(reqRef);
@@ -775,10 +895,11 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
               const userRef = doc(db, 'users', reqData.userId);
               const userDoc = await transaction.get(userRef);
               if (!userDoc.exists()) throw new Error("User not found");
+              const userData = userDoc.data() as User;
 
               transaction.update(reqRef, { status: 'approved' });
               transaction.update(userRef, { 
-                  balance: increment(reqData.amount),
+                  wallet_balance: increment(reqData.amount),
                   depositCount: increment(1)
               });
               
@@ -798,7 +919,44 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
                   utr: reqData.utr,
                   screenshotUrl: reqData.screenshotUrl
               });
+
+              // Referral Commission Logic
+              if (userData.referredBy) {
+                  const referrerRef = doc(db, 'users', userData.referredBy);
+                  const referrerDoc = await transaction.get(referrerRef);
+                  if (referrerDoc.exists()) {
+                      const commissionAmount = Math.floor(reqData.amount * 0.05); // 5% commission
+                      if (commissionAmount > 0) {
+                          const isFirstDeposit = (userData.depositCount || 0) === 0;
+                          transaction.update(referrerRef, {
+                              wallet_balance: increment(commissionAmount),
+                              validReferralCount: increment(isFirstDeposit ? 1 : 0)
+                          });
+
+                          const commTxId = 'comm-' + Date.now() + '-' + Math.random().toString(36).substr(2, 5);
+                          const commTxRef = doc(db, 'transactions', commTxId);
+                          transaction.set(commTxRef, {
+                              id: commTxId,
+                              userId: userData.referredBy,
+                              type: 'COMMISSION',
+                              amount: commissionAmount,
+                              status: 'COMPLETED',
+                              timestamp: Date.now(),
+                              description: `Referral commission from ${userData.username || 'User'}`
+                          });
+                          
+                          if (referralDocId) {
+                              const refDocRef = doc(db, 'referrals', referralDocId);
+                              transaction.update(refDocRef, {
+                                  commission: increment(commissionAmount)
+                              });
+                          }
+                      }
+                  }
+              }
           });
+          
+          setDepositRequests(prev => prev.map(req => req.id === id ? { ...req, status: 'approved' } : req));
       } catch (e: any) {
           console.error("Approve Deposit Error:", e);
           throw e;
@@ -829,6 +987,7 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
                   screenshotUrl: reqData.screenshotUrl
               });
           }
+          setDepositRequests(prev => prev.map(req => req.id === id ? { ...req, status: 'rejected' } : req));
       } catch (e: any) {
           console.error("Reject Deposit Error:", e);
           throw e;
@@ -842,7 +1001,7 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
           const userDoc = await getDoc(userRef);
           if (!userDoc.exists()) throw new Error("User not found");
           const userData = userDoc.data() as User;
-          if (userData.balance < amount) throw new Error("Insufficient Balance");
+          if (userData.wallet_balance < amount) throw new Error("Insufficient Balance");
 
           if (bankDetails) {
               await updateDoc(userRef, { bankDetails: sanitize(bankDetails) });
@@ -861,6 +1020,7 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
               bankDetailsSnapshot: bankDetails || userData.bankDetails || null
           };
           await setDoc(doc(db, 'withdraw_requests', reqId), sanitize(reqData));
+          setWithdrawRequests(prev => [{ ...reqData } as any, ...prev]);
           return true;
       } catch (e: any) {
           console.error("Withdraw Error", e);
@@ -883,12 +1043,12 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
               if (!userDoc.exists()) throw new Error("User not found");
               const userData = userDoc.data() as User;
               
-              if (userData.balance < reqData.amount) throw new Error("Insufficient Balance");
+              if (userData.wallet_balance < reqData.amount) throw new Error("Insufficient Balance");
 
               transaction.update(reqRef, { status: 'approved' });
               
               transaction.update(userRef, { 
-                  balance: increment(-reqData.amount)
+                  wallet_balance: increment(-reqData.amount)
               });
 
               const txId = 'wd-' + Date.now() + '-' + Math.random().toString(36).substr(2, 5);
@@ -902,6 +1062,7 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
               const txRef = doc(db, 'transactions', txId);
               transaction.set(txRef, sanitize(tx));
           });
+          setWithdrawRequests(prev => prev.map(req => req.id === id ? { ...req, status: 'approved' } : req));
           showNotification("Withdrawal approved", 'success');
       } catch (e: any) {
           console.error("Approve Withdraw Error", e);
@@ -925,6 +1086,7 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
               };
               await setDoc(doc(db, 'transactions', txId), sanitize(tx));
           }
+          setWithdrawRequests(prev => prev.map(req => req.id === id ? { ...req, status: 'rejected' } : req));
           showNotification("Withdrawal rejected", 'success');
       } catch (e: any) {
           console.error("Reject Withdraw Error", e);
@@ -949,10 +1111,10 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
             id: txId, userId: userId, type: 'ADMIN_TRANSFER', amount: safeAmount, status: 'COMPLETED',
             timestamp: Date.now(), description: `Funds Added by ${user.role}`
         });
-        batch.update(doc(db, 'users', userId), { balance: increment(safeAmount) });
+        batch.update(doc(db, 'users', userId), { wallet_balance: increment(safeAmount) });
         
         if (user.role === 'SUB_AGENT') {
-            batch.update(doc(db, 'users', user.id), { balance: increment(-safeAmount) });
+            batch.update(doc(db, 'users', user.id), { wallet_balance: increment(-safeAmount) });
             const debitId = 'tf-debit-' + Date.now();
             batch.set(doc(db, 'transactions', debitId), {
                 id: debitId, userId: user.id, type: 'ADMIN_TRANSFER', amount: -safeAmount, status: 'COMPLETED',
@@ -991,14 +1153,14 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
               if (action === 'REJECT') {
                   if (currentTx.type === 'WITHDRAW') {
                       transaction.update(userRef, { 
-                          balance: increment(currentTx.amount),
+                          wallet_balance: increment(currentTx.amount),
                           lockedBalance: increment(-currentTx.amount) 
                       });
                   }
                   transaction.update(txRef, { status: 'REJECTED' });
               } else {
                   if (currentTx.type === 'DEPOSIT') {
-                      transaction.update(userRef, { balance: increment(currentTx.amount), depositCount: increment(1) });
+                      transaction.update(userRef, { wallet_balance: increment(currentTx.amount), depositCount: increment(1) });
                       transaction.update(txRef, { status: 'COMPLETED' });
                   } else if (currentTx.type === 'WITHDRAW') {
                       transaction.update(userRef, { lockedBalance: increment(-currentTx.amount) });
@@ -1059,8 +1221,8 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
   return (
     <AppContext.Provider value={{
       user, allUsers, register, createStaffAccount, login, logout, requestSubAgent, promoteToSubAgent, findUserByIdentifier, adminAddFunds,
-      games, historyResults, scheduledResults, transactions, depositRequests, withdrawRequests, bets, walletBalance: user?.balance || 0,
-      qrCodeUrl, updateQrCode, deposit, approveDeposit, rejectDeposit, withdraw, approveWithdraw, rejectWithdraw, uploadProof, placeBet, placeBulkBets, handleSlotSpin,
+      games, historyResults, scheduledResults, transactions, depositRequests, withdrawRequests, bets, walletBalance: user?.wallet_balance || 0,
+      qrCodeUrl, updateQrCode, deposit, approveDeposit, rejectDeposit, withdraw, approveWithdraw, rejectWithdraw, uploadProof, placeBet, placeBulkBets, isBetting, handleSlotSpin, processGameWinnings,
       deleteResult, maintainResultHistory,
       addTransaction, processTransaction, referUser, bannerConfig, updateBanner, deleteBanner, pendingResults, connectionStatus,
       notification, showNotification, clearNotification, simulatedActivityEnabled, toggleSimulatedActivity, cancelPendingResult, renewAccess

@@ -20,27 +20,27 @@ type GameState = 'IDLE' | 'READY' | 'PLAYING' | 'REVEAL' | 'RESULT';
 interface CardObj { suit: 'H'|'D'|'C'|'S', rank: string, value: number, key: string }
 
 const GAME_CONFIG: Record<UniversalGameId, { title: string, multiplier: number, type: 'RNG' | 'CARD' | 'BOARD' | 'ARCADE' }> = {
-  'COIN_FLIP': { title: 'Coin Flip', multiplier: 1.9, type: 'RNG' },
-  'DICE_ROLL': { title: 'Dice Roll', multiplier: 5.8, type: 'RNG' },
-  'NUM_GUESS_SMALL': { title: 'Guess 0-9', multiplier: 9, type: 'RNG' },
-  'NUM_GUESS_BIG': { title: 'Guess 0-99', multiplier: 90, type: 'RNG' },
-  'COLOR_PRED': { title: 'Wingo 1 Min', multiplier: 1.98, type: 'RNG' },
-  'COLOR_PRED_30': { title: 'Wingo 30 Sec', multiplier: 1.98, type: 'RNG' },
-  'LUCKY_WHEEL': { title: 'Lucky Wheel', multiplier: 5, type: 'RNG' },
-  'PLINKO': { title: 'Plinko', multiplier: 10, type: 'RNG' }, // Handled by PlinkoEngine
-  'TAP_SPEED': { title: 'Tap Speed', multiplier: 2, type: 'ARCADE' },
-  'TEEN_PATTI': { title: 'Teen Patti', multiplier: 1.9, type: 'CARD' },
-  'ANDAR_BAHAR': { title: 'Andar Bahar', multiplier: 1.9, type: 'CARD' },
-  'DRAGON_TIGER': { title: 'Dragon Tiger', multiplier: 1.9, type: 'CARD' },
-  'WAR_CARDS': { title: 'War', multiplier: 1.9, type: 'CARD' },
-  'BLACKJACK': { title: 'Blackjack', multiplier: 2.5, type: 'CARD' },
-  'BINGO_75': { title: 'Bingo 75', multiplier: 4, type: 'BOARD' },
-  'BINGO_90': { title: 'Bingo 90', multiplier: 5, type: 'BOARD' },
-  'MINI_LUDO': { title: 'Mini Ludo', multiplier: 1.9, type: 'BOARD' }, // Handled by LudoEngine
-  'KENO': { title: 'Keno', multiplier: 10, type: 'BOARD' },
-  'SCRATCH_CARD': { title: 'Scratch Card', multiplier: 5, type: 'RNG' },
-  'STACK_TOWER': { title: 'Stack Tower', multiplier: 1.5, type: 'ARCADE' },
-  'ENDLESS_RUNNER': { title: 'Coin Run', multiplier: 2, type: 'ARCADE' },
+  'COIN_FLIP': { title: 'Coin Flip', multiplier: 98, type: 'RNG' },
+  'DICE_ROLL': { title: 'Dice Roll', multiplier: 98, type: 'RNG' },
+  'NUM_GUESS_SMALL': { title: 'Guess 0-9', multiplier: 98, type: 'RNG' },
+  'NUM_GUESS_BIG': { title: 'Guess 0-99', multiplier: 98, type: 'RNG' },
+  'COLOR_PRED': { title: 'Wingo 1 Min', multiplier: 98, type: 'RNG' },
+  'COLOR_PRED_30': { title: 'Wingo 30 Sec', multiplier: 98, type: 'RNG' },
+  'LUCKY_WHEEL': { title: 'Lucky Wheel', multiplier: 98, type: 'RNG' },
+  'PLINKO': { title: 'Plinko', multiplier: 98, type: 'RNG' }, // Handled by PlinkoEngine
+  'TAP_SPEED': { title: 'Tap Speed', multiplier: 98, type: 'ARCADE' },
+  'TEEN_PATTI': { title: 'Teen Patti', multiplier: 98, type: 'CARD' },
+  'ANDAR_BAHAR': { title: 'Andar Bahar', multiplier: 98, type: 'CARD' },
+  'DRAGON_TIGER': { title: 'Dragon Tiger', multiplier: 98, type: 'CARD' },
+  'WAR_CARDS': { title: 'War', multiplier: 98, type: 'CARD' },
+  'BLACKJACK': { title: 'Blackjack', multiplier: 98, type: 'CARD' },
+  'BINGO_75': { title: 'Bingo 75', multiplier: 98, type: 'BOARD' },
+  'BINGO_90': { title: 'Bingo 90', multiplier: 98, type: 'BOARD' },
+  'MINI_LUDO': { title: 'Mini Ludo', multiplier: 98, type: 'BOARD' }, // Handled by LudoEngine
+  'KENO': { title: 'Keno', multiplier: 98, type: 'BOARD' },
+  'SCRATCH_CARD': { title: 'Scratch Card', multiplier: 98, type: 'RNG' },
+  'STACK_TOWER': { title: 'Stack Tower', multiplier: 98, type: 'ARCADE' },
+  'ENDLESS_RUNNER': { title: 'Coin Run', multiplier: 98, type: 'ARCADE' },
 };
 
 // --- CARD UTILS ---
@@ -99,7 +99,7 @@ const PlayingCard: React.FC<{ card: CardObj | null, hidden?: boolean, small?: bo
 
 // --- MAIN ENGINE ---
 export const UniversalGameEngine: React.FC<{ gameId: UniversalGameId; onBack: () => void }> = ({ gameId, onBack }) => {
-  const { user, walletBalance, placeBet, addTransaction } = useApp();
+  const { user, walletBalance, placeBet, addTransaction, isBetting } = useApp();
   const config = GAME_CONFIG[gameId];
   
   // State
@@ -500,7 +500,7 @@ export const UniversalGameEngine: React.FC<{ gameId: UniversalGameId; onBack: ()
           
           if (isWin && amountWon > 0) {
               if (user) {
-                  updateDoc(doc(db, 'users', user.id), { balance: increment(amountWon) }).catch(console.error);
+                  updateDoc(doc(db, 'users', user.id), { wallet_balance: increment(amountWon) }).catch(console.error);
                   addTransaction({
                       id: `win-${Date.now()}`,
                       userId: user.id,
@@ -832,9 +832,9 @@ export const UniversalGameEngine: React.FC<{ gameId: UniversalGameId; onBack: ()
                     onClick={startGame} 
                     variant="gold" 
                     className="w-full md:w-auto h-full min-h-[50px] px-8 text-lg shadow-lg shadow-yellow-500/10"
-                    disabled={bet <= 0 || (config.type === 'RNG' && !selection && gameId !== 'LUCKY_WHEEL' && gameId !== 'SCRATCH_CARD' && !gameId.includes('GUESS'))}
+                    disabled={bet <= 0 || (config.type === 'RNG' && !selection && gameId !== 'LUCKY_WHEEL' && gameId !== 'SCRATCH_CARD' && !gameId.includes('GUESS')) || isBetting}
                   >
-                    {gameId === 'LUCKY_WHEEL' ? 'SPIN' : gameId === 'DICE_ROLL' ? 'ROLL' : gameId === 'SCRATCH_CARD' ? 'SCRATCH' : 'PLAY'}
+                    {isBetting ? <Loader2 className="w-5 h-5 animate-spin" /> : (gameId === 'LUCKY_WHEEL' ? 'SPIN' : gameId === 'DICE_ROLL' ? 'ROLL' : gameId === 'SCRATCH_CARD' ? 'SCRATCH' : 'PLAY')}
                   </Button>
               </div>
           </div>

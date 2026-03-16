@@ -4,12 +4,12 @@ import { useApp } from '../context/AppContext';
 import { Button } from '../components/ui/Button';
 import { Shield, FileText, LayoutGrid, Users, Briefcase, AlertTriangle, History, BarChart3, Wallet, Save, RefreshCw, Trophy, Clock, Search, Send, CheckCircle, XCircle, Loader2, Filter, Dice5, Lock, Edit3, User as UserIcon, Crown } from 'lucide-react';
 import { User, Transaction } from '../types';
-import { collection, onSnapshot, query, updateDoc, doc, serverTimestamp, setDoc, orderBy } from 'firebase/firestore';
+import { collection, onSnapshot, query, updateDoc, doc, serverTimestamp, setDoc, orderBy, getDocs, getDoc, where } from 'firebase/firestore';
 import { db } from '../firebase';
 import { sanitize, formatHourSlot } from '../utils/helpers';
 
 export const AdminPanel: React.FC = () => {
-  const { user, transactions, depositRequests, withdrawRequests, bets, processTransaction, approveDeposit, rejectDeposit, approveWithdraw, rejectWithdraw, createStaffAccount, adminAddFunds, showNotification, findUserByIdentifier, renewAccess, qrCodeUrl } = useApp();
+  const { user, transactions, depositRequests, withdrawRequests, bets, processTransaction, approveDeposit, rejectDeposit, approveWithdraw, rejectWithdraw, createStaffAccount, adminAddFunds, showNotification, findUserByIdentifier, renewAccess, qrCodeUrl, processGameWinnings } = useApp();
   
   const [activeTab, setActiveTab] = useState<'dashboard' | 'results' | 'funds' | 'users' | 'requests' | 'staff' | 'live_bets' | 'agent_chats'>('results');
   const [localUsers, setLocalUsers] = useState<User[]>([]);
@@ -68,7 +68,8 @@ export const AdminPanel: React.FC = () => {
         const q = query(collection(db, 'games'));
         const unsub = onSnapshot(q, (snap) => {
             const list = snap.docs.map(d => ({ id: d.id, ...d.data() }));
-            setGames(list || []);
+            const sortedList = list.sort((a: any, b: any) => Number(a.hour_slot || 0) - Number(b.hour_slot || 0));
+            setGames(sortedList);
         }, (error) => {
             console.error("Error fetching games:", error);
         });
@@ -161,7 +162,7 @@ export const AdminPanel: React.FC = () => {
 
       const activeBets = bets.filter(b => {
           if (b.gameId !== selectedAnalysisGameId) return false;
-          if (b.status !== 'PENDING') return false;
+          if (b.status !== 'active' && b.status !== 'PENDING') return false;
           return true;
       });
 
@@ -288,6 +289,8 @@ export const AdminPanel: React.FC = () => {
               result: newValue,
               createdAt: serverTimestamp()
           }, { merge: true });
+
+          await processGameWinnings(game.id, newValue);
 
           showNotification("Result Saved!", 'success');
           setGameInputs(prev => ({ ...prev, [game.id]: '' }));
@@ -614,7 +617,7 @@ export const AdminPanel: React.FC = () => {
                                     </div>
                                     <div className="text-right">
                                         <p className="text-[10px] text-slate-400 uppercase">Current Balance</p>
-                                        <p className="text-xl font-bold text-white font-mono">₹{foundUser.balance}</p>
+                                        <p className="text-xl font-bold text-white font-mono">₹{foundUser.wallet_balance}</p>
                                     </div>
                                 </div>
                             )}
@@ -744,7 +747,7 @@ export const AdminPanel: React.FC = () => {
                                             <div className="text-xs text-slate-500">{u.mobile}</div>
                                             <div className="text-[10px] text-slate-600">{u.email}</div>
                                         </td>
-                                        <td className="p-3 font-bold text-green-400 font-mono">₹{u.balance}</td>
+                                        <td className="p-3 font-bold text-green-400 font-mono">₹{u.wallet_balance}</td>
                                         <td className="p-3 text-xs text-slate-300">
                                             {u.bankDetails ? (
                                                 <div>
@@ -827,7 +830,7 @@ export const AdminPanel: React.FC = () => {
                                  </div>
                                  <div className="text-right">
                                      <div className="text-xs text-slate-500">Balance</div>
-                                     <div className="font-mono text-green-400">₹{staff.balance.toFixed(2)}</div>
+                                     <div className="font-mono text-green-400">₹{staff.wallet_balance.toFixed(2)}</div>
                                  </div>
                              </div>
                          ))}

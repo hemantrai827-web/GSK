@@ -31,17 +31,17 @@ export const Home: React.FC<{ navigateTo: (tab: string) => void }> = ({ navigate
 
   useEffect(() => {
     const q = query(collection(db, 'gameHistory'), orderBy('date', 'desc'), limit(3000));
-    const unsubscribe = onSnapshot(q, (snapshot) => {
-      const historyData = snapshot.docs.map(doc => ({
-        id: doc.id,
-        ...doc.data()
-      }));
-      setGameHistory(historyData);
-    }, (error) => {
-      console.error("Error fetching game history:", error);
+    import('firebase/firestore').then(({ getDocs }) => {
+      getDocs(q).then((snapshot) => {
+        const historyData = snapshot.docs.map(doc => ({
+          id: doc.id,
+          ...doc.data()
+        }));
+        setGameHistory(historyData);
+      }).catch((error) => {
+        console.error("Error fetching game history:", error);
+      });
     });
-
-    return () => unsubscribe();
   }, []);
 
   const currentHour = currentTime.getHours();
@@ -262,70 +262,76 @@ export const Home: React.FC<{ navigateTo: (tab: string) => void }> = ({ navigate
          </motion.section>
       )}
 
-      <section className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-        {games.map((game, idx) => {
-          const isSpecial = game.hour_slot === 20;
-          return (
-          <motion.article 
-            initial={{ opacity: 0, y: 20 }}
-            animate={{ opacity: 1, y: 0 }}
-            transition={{ duration: 0.5, delay: idx * 0.1 }}
-            key={game.id} 
-            className={`relative group overflow-hidden rounded-xl border transition-all duration-300 hover:shadow-2xl hover:-translate-y-2 ${isSpecial ? 'bg-gradient-to-br from-purple-900/60 to-slate-900 border-purple-500 shadow-[0_0_30px_rgba(168,85,247,0.2)] md:scale-105 z-10' : 'bg-slate-900/50 border-slate-700 hover:border-slate-600'}`}
-          >
-            {isSpecial && (
-              <div className="absolute top-0 right-0 p-3">
-                <Crown className="w-6 h-6 text-yellow-400 animate-pulse" />
-              </div>
-            )}
-            <div className="p-6">
-              <div className="flex justify-between items-start mb-4">
-                <div>
-                  <h3 className={`text-xl font-bold mb-1 tracking-tight flex items-center gap-2 ${isSpecial ? 'text-purple-300' : 'text-white'}`}>
-                    {game.name}
-                    {isSpecial && <Sparkles className="w-4 h-4 text-purple-400" />}
-                  </h3>
-                  <div className={`flex items-center gap-2 text-xs ${isSpecial ? 'text-purple-200/70' : 'text-slate-400'}`}>
-                    <Clock className="w-3 h-3" />
-                    <span>Timing: {formatHourSlot(game.hour_slot)}</span>
+      {games.length === 0 ? (
+        <div className="text-center py-20 text-slate-400 animate-pulse">
+          <p className="text-xl">Loading games data...</p>
+        </div>
+      ) : (
+        <section className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+          {games.map((game, idx) => {
+            const isSpecial = game.hour_slot === 20;
+            return (
+            <motion.article 
+              initial={{ opacity: 0, y: 20 }}
+              animate={{ opacity: 1, y: 0 }}
+              transition={{ duration: 0.5, delay: idx * 0.1 }}
+              key={game.id} 
+              className={`relative group overflow-hidden rounded-xl border transition-all duration-300 hover:shadow-2xl hover:-translate-y-2 ${isSpecial ? 'bg-gradient-to-br from-purple-900/60 to-slate-900 border-purple-500 shadow-[0_0_30px_rgba(168,85,247,0.2)] md:scale-105 z-10' : 'bg-slate-900/50 border-slate-700 hover:border-slate-600'}`}
+            >
+              {isSpecial && (
+                <div className="absolute top-0 right-0 p-3">
+                  <Crown className="w-6 h-6 text-yellow-400 animate-pulse" />
+                </div>
+              )}
+              <div className="p-6">
+                <div className="flex justify-between items-start mb-4">
+                  <div>
+                    <h3 className={`text-xl font-bold mb-1 tracking-tight flex items-center gap-2 ${isSpecial ? 'text-purple-300' : 'text-white'}`}>
+                      {game.name}
+                      {isSpecial && <Sparkles className="w-4 h-4 text-purple-400" />}
+                    </h3>
+                    <div className={`flex items-center gap-2 text-xs ${isSpecial ? 'text-purple-200/70' : 'text-slate-400'}`}>
+                      <Clock className="w-3 h-3" />
+                      <span>Timing: {formatHourSlot(game.hour_slot)}</span>
+                    </div>
                   </div>
                 </div>
-              </div>
-              
-              <div className={`flex items-center justify-center py-4 my-2 rounded-lg border shadow-inner transition-colors ${isSpecial ? 'bg-purple-950/50 border-purple-500/30 group-hover:bg-purple-900/50' : 'bg-black/40 border-white/5 group-hover:bg-black/60'}`}>
-                {getTodayResult(game.id) !== '----' ? (
-                  <span className={`text-4xl font-mono font-bold tracking-widest drop-shadow group-hover:scale-110 transition-transform ${isSpecial ? 'text-purple-400' : 'text-yellow-400'}`}>
-                    {getTodayResult(game.id)}
-                  </span>
-                ) : (
-                  <span className={`text-2xl font-mono font-bold animate-pulse ${isSpecial ? 'text-purple-500/50' : 'text-slate-600'}`}>
-                    WAITING...
-                  </span>
-                )}
-              </div>
-
-              <div className="flex justify-between items-center mt-4">
-                 <div className="flex flex-col items-center flex-1 border-r border-white/10">
-                    <span className="text-[10px] text-slate-500 uppercase tracking-wider mb-1">Yesterday</span>
-                    <span className="font-mono font-bold text-slate-300">{getYesterdayResult(game.id)}</span>
-                 </div>
-                 <div className="flex flex-col items-center flex-1">
-                    <span className="text-[10px] text-slate-500 uppercase tracking-wider mb-1">Today</span>
-                    <span className={`font-mono font-bold ${getTodayResult(game.id) !== '----' ? 'text-yellow-400' : 'text-slate-500'}`}>
-                        {getTodayResult(game.id)}
+                
+                <div className={`flex items-center justify-center py-4 my-2 rounded-lg border shadow-inner transition-colors ${isSpecial ? 'bg-purple-950/50 border-purple-500/30 group-hover:bg-purple-900/50' : 'bg-black/40 border-white/5 group-hover:bg-black/60'}`}>
+                  {getTodayResult(game.id) !== '----' ? (
+                    <span className={`text-4xl font-mono font-bold tracking-widest drop-shadow group-hover:scale-110 transition-transform ${isSpecial ? 'text-purple-400' : 'text-yellow-400'}`}>
+                      {getTodayResult(game.id)}
                     </span>
-                 </div>
+                  ) : (
+                    <span className={`text-2xl font-mono font-bold animate-pulse ${isSpecial ? 'text-purple-500/50' : 'text-slate-600'}`}>
+                      WAITING...
+                    </span>
+                  )}
+                </div>
+
+                <div className="flex justify-between items-center mt-4">
+                   <div className="flex flex-col items-center flex-1 border-r border-white/10">
+                      <span className="text-[10px] text-slate-500 uppercase tracking-wider mb-1">Yesterday</span>
+                      <span className="font-mono font-bold text-slate-300">{getYesterdayResult(game.id)}</span>
+                   </div>
+                   <div className="flex flex-col items-center flex-1">
+                      <span className="text-[10px] text-slate-500 uppercase tracking-wider mb-1">Today</span>
+                      <span className={`font-mono font-bold ${getTodayResult(game.id) !== '----' ? 'text-yellow-400' : 'text-slate-500'}`}>
+                          {getTodayResult(game.id)}
+                      </span>
+                   </div>
+                </div>
+                <div className="mt-4 text-center">
+                   <Button variant={isSpecial ? "default" : "secondary"} size="sm" onClick={() => navigateTo('casino')} className={`w-full ${isSpecial ? "bg-purple-600 hover:bg-purple-500 text-white shadow-lg shadow-purple-500/30" : "border-slate-600 hover:bg-slate-700 hover:text-white transform hover:scale-105 transition-transform"}`}>
+                     Play Now
+                   </Button>
+                </div>
               </div>
-              <div className="mt-4 text-center">
-                 <Button variant={isSpecial ? "default" : "secondary"} size="sm" onClick={() => navigateTo('casino')} className={`w-full ${isSpecial ? "bg-purple-600 hover:bg-purple-500 text-white shadow-lg shadow-purple-500/30" : "border-slate-600 hover:bg-slate-700 hover:text-white transform hover:scale-105 transition-transform"}`}>
-                   Play Now
-                 </Button>
-              </div>
-            </div>
-            <div className={`absolute inset-0 bg-gradient-to-tr pointer-events-none opacity-0 group-hover:opacity-100 transition-opacity ${isSpecial ? 'from-purple-500/10 to-transparent' : 'from-white/5 to-transparent'}`} />
-          </motion.article>
-        )})}
-      </section>
+              <div className={`absolute inset-0 bg-gradient-to-tr pointer-events-none opacity-0 group-hover:opacity-100 transition-opacity ${isSpecial ? 'from-purple-500/10 to-transparent' : 'from-white/5 to-transparent'}`} />
+            </motion.article>
+          )})}
+        </section>
+      )}
 
       <motion.section 
         initial={{ opacity: 0, y: 30 }}

@@ -2,7 +2,7 @@
 import React, { useEffect, useRef, useState } from 'react';
 import { useApp } from '../context/AppContext';
 import { Button } from './ui/Button';
-import { Rocket, Wallet, AlertTriangle, CheckCircle, History } from 'lucide-react';
+import { Rocket, Wallet, AlertTriangle, CheckCircle, History, Loader2 } from 'lucide-react';
 import { db } from '../firebase';
 import { doc, updateDoc, increment } from 'firebase/firestore';
 
@@ -10,7 +10,7 @@ const WIDTH = 800;
 const HEIGHT = 400;
 
 export const AviatorEngine: React.FC<{ onBack: () => void }> = ({ onBack }) => {
-  const { user, walletBalance, placeBet, addTransaction } = useApp();
+  const { user, walletBalance, placeBet, addTransaction, isBetting } = useApp();
   
   // Game State
   const [phase, setPhase] = useState<'IDLE' | 'BETTING' | 'FLYING' | 'CRASHED'>('BETTING');
@@ -60,7 +60,7 @@ export const AviatorEngine: React.FC<{ onBack: () => void }> = ({ onBack }) => {
   const launch = () => {
     // RIGGED LOGIC: Check Bet Amount
     // If bet is > 500 or > 10% of wallet, assume "High Risk" for house
-    const isHighBet = betAmount > 500 || (user && betAmount > user.balance * 0.1); 
+    const isHighBet = betAmount > 500 || (user && betAmount > user.wallet_balance * 0.1); 
     const isLowBet = betAmount < 50;
 
     let crash = 1.00;
@@ -113,7 +113,7 @@ export const AviatorEngine: React.FC<{ onBack: () => void }> = ({ onBack }) => {
     
     // Credit Wallet
     if (user) {
-        await updateDoc(doc(db, 'users', user.id), { balance: increment(winAmount) });
+        await updateDoc(doc(db, 'users', user.id), { wallet_balance: increment(winAmount) });
         addTransaction({
             id: `av-${Date.now()}`,
             userId: user.id,
@@ -253,7 +253,9 @@ export const AviatorEngine: React.FC<{ onBack: () => void }> = ({ onBack }) => {
                              <span className="text-yellow-400 font-bold px-2">₹</span>
                              <input type="number" value={betAmount} onChange={e => setBetAmount(Number(e.target.value))} className="bg-transparent w-20 text-white font-bold outline-none" />
                          </div>
-                         <Button onClick={handleBet} variant="gold" className="px-8 font-black text-lg">BET</Button>
+                         <Button onClick={handleBet} variant="gold" disabled={isBetting} className="px-8 font-black text-lg">
+                             {isBetting ? <Loader2 className="w-5 h-5 animate-spin" /> : 'BET'}
+                         </Button>
                      </div>
                  ) : (
                      <div className="mt-6 bg-green-500/20 text-green-400 px-6 py-2 rounded-xl font-bold border border-green-500/50">

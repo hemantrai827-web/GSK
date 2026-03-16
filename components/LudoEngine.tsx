@@ -1,12 +1,12 @@
 import React, { useState, useRef } from 'react';
 import { useApp } from '../context/AppContext';
 import { Button } from './ui/Button';
-import { Dice5, Trophy, User, Cpu, ArrowRight } from 'lucide-react';
+import { Dice5, Trophy, User, Cpu, ArrowRight, Loader2 } from 'lucide-react';
 import { doc, updateDoc, increment } from 'firebase/firestore';
 import { db } from '../firebase';
 
 export const LudoEngine: React.FC<{ onBack: () => void }> = ({ onBack }) => {
-  const { user, walletBalance, placeBet, addTransaction } = useApp();
+  const { user, walletBalance, placeBet, addTransaction, isBetting } = useApp();
   const [gameStatus, setGameStatus] = useState<'LOBBY' | 'PLAYING' | 'RESULT'>('LOBBY');
   const [bet, setBet] = useState(10);
   const [playerPos, setPlayerPos] = useState(0);
@@ -84,7 +84,7 @@ export const LudoEngine: React.FC<{ onBack: () => void }> = ({ onBack }) => {
     if (winner === 'PLAYER') {
         const winAmount = Math.floor(bet * 1.9); // 1.9x payout
         if (user) {
-            await updateDoc(doc(db, 'users', user.id), { balance: increment(winAmount) });
+            await updateDoc(doc(db, 'users', user.id), { wallet_balance: increment(winAmount) });
             addTransaction({
                 id: `ludo-${Date.now()}`,
                 userId: user.id,
@@ -133,7 +133,9 @@ export const LudoEngine: React.FC<{ onBack: () => void }> = ({ onBack }) => {
                    <Button size="sm" onClick={() => setBet(bet+10)}>+</Button>
                </div>
 
-               <Button onClick={startGame} variant="gold" className="w-full py-4 text-xl shadow-xl">PLAY 1v1</Button>
+               <Button onClick={startGame} variant="gold" disabled={isBetting} className="w-full py-4 text-xl shadow-xl">
+                   {isBetting ? <Loader2 className="w-5 h-5 animate-spin mx-auto" /> : 'PLAY 1v1'}
+               </Button>
            </div>
        )}
 

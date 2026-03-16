@@ -158,9 +158,9 @@ export const Wallet: React.FC = () => {
 
   const getStatusBadge = (status: string) => {
       switch(status) {
-          case 'COMPLETED': case 'WON': return <span className="px-2 py-1 rounded text-xs font-bold bg-green-500/20 text-green-400 flex items-center gap-1 w-fit"><CheckCircle className="w-3 h-3"/> {status}</span>;
-          case 'PENDING': return <span className="px-2 py-1 rounded text-xs font-bold bg-yellow-500/20 text-yellow-400 flex items-center gap-1 w-fit"><Loader2 className="w-3 h-3 animate-spin"/> PENDING</span>;
-          case 'REJECTED': case 'LOST': return <span className="px-2 py-1 rounded text-xs font-bold bg-red-500/20 text-red-400 flex items-center gap-1 w-fit"><XCircle className="w-3 h-3"/> {status}</span>;
+          case 'COMPLETED': case 'WON': case 'win': return <span className="px-2 py-1 rounded text-xs font-bold bg-green-500/20 text-green-400 flex items-center gap-1 w-fit"><CheckCircle className="w-3 h-3"/> {status.toUpperCase()}</span>;
+          case 'PENDING': case 'active': return <span className="px-2 py-1 rounded text-xs font-bold bg-yellow-500/20 text-yellow-400 flex items-center gap-1 w-fit"><Loader2 className="w-3 h-3 animate-spin"/> {status === 'active' ? 'ACTIVE' : 'PENDING'}</span>;
+          case 'REJECTED': case 'LOST': case 'lose': return <span className="px-2 py-1 rounded text-xs font-bold bg-red-500/20 text-red-400 flex items-center gap-1 w-fit"><XCircle className="w-3 h-3"/> {status.toUpperCase()}</span>;
           default: return <span className="text-slate-500">{status}</span>;
       }
   };

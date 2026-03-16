@@ -2,14 +2,14 @@
 import React, { useState, useMemo, useEffect } from 'react';
 import { useApp } from '../context/AppContext';
 import { Button } from '../components/ui/Button';
-import { Timer, Trophy, Trash2, CheckCircle, Wallet, Calendar, Zap, Sparkles, Gem, Lock, History, Clock, Crown } from 'lucide-react';
+import { Timer, Trophy, Trash2, CheckCircle, Wallet, Calendar, Zap, Sparkles, Gem, Lock, History, Clock, Crown, Loader2 } from 'lucide-react';
 import { GAME_RULES } from '../config/GameRules';
 import { RulesPopup } from '../components/RulesPopup';
 import { formatHourSlot } from '../utils/helpers';
 import { motion } from 'motion/react';
 
 export const Casino: React.FC = () => {
-  const { games, walletBalance, placeBulkBets, historyResults } = useApp();
+  const { games, walletBalance, placeBulkBets, isBetting, historyResults } = useApp();
   const [selectedGameId, setSelectedGameId] = useState<string>('');
   const [betInputs, setBetInputs] = useState<Record<string, string>>({}); 
   const [message, setMessage] = useState<{type: 'success' | 'error', text: string} | null>(null);
@@ -121,6 +121,16 @@ export const Casino: React.FC = () => {
       setMessage({ type: 'error', text: 'Failed to place bets. Try again.' });
     }
   };
+
+  if (games.length === 0) {
+    return (
+      <div className="flex flex-col items-center justify-center min-h-[60vh] text-slate-400 animate-pulse">
+        <Sparkles className="w-12 h-12 mb-4 text-yellow-500 opacity-50" />
+        <h2 className="text-2xl font-bold mb-2">Loading Casino...</h2>
+        <p>Please wait while we fetch the latest games.</p>
+      </div>
+    );
+  }
 
   return (
     <motion.div 
@@ -310,12 +320,14 @@ export const Casino: React.FC = () => {
                                         <p className={`text-3xl font-bold ${isJackpot ? 'text-purple-400' : 'text-white'} animate-pulse-slow`}>₹ {calculateTotalBet()}</p>
                                     </div>
                                     {isJackpot ? (
-                                        <Button type="submit" disabled={!isBettingOpen} className="w-full sm:w-auto min-w-[200px] shadow-xl shadow-purple-500/30 bg-gradient-to-r from-purple-600 to-pink-600 hover:from-purple-500 hover:to-pink-500 text-white font-bold border-none disabled:opacity-50 disabled:cursor-not-allowed hover:scale-105 transition-transform">
-                                            <Gem className="w-5 h-5 mr-2" /> Place Jackpot Bet
+                                        <Button type="submit" disabled={!isBettingOpen || isBetting} className="w-full sm:w-auto min-w-[200px] shadow-xl shadow-purple-500/30 bg-gradient-to-r from-purple-600 to-pink-600 hover:from-purple-500 hover:to-pink-500 text-white font-bold border-none disabled:opacity-50 disabled:cursor-not-allowed hover:scale-105 transition-transform">
+                                            {isBetting ? <Loader2 className="w-5 h-5 mr-2 animate-spin" /> : <Gem className="w-5 h-5 mr-2" />} 
+                                            {isBetting ? 'Processing...' : 'Place Jackpot Bet'}
                                         </Button>
                                     ) : (
-                                        <Button variant="gold" size="lg" disabled={!isBettingOpen} className="w-full sm:w-auto min-w-[200px] shadow-xl shadow-yellow-500/20 disabled:opacity-50 disabled:cursor-not-allowed hover:scale-105 transition-transform">
-                                            <CheckCircle className="w-5 h-5 mr-2" /> Place Bets
+                                        <Button variant="gold" size="lg" disabled={!isBettingOpen || isBetting} className="w-full sm:w-auto min-w-[200px] shadow-xl shadow-yellow-500/20 disabled:opacity-50 disabled:cursor-not-allowed hover:scale-105 transition-transform">
+                                            {isBetting ? <Loader2 className="w-5 h-5 mr-2 animate-spin" /> : <CheckCircle className="w-5 h-5 mr-2" />} 
+                                            {isBetting ? 'Processing...' : 'Place Bets'}
                                         </Button>
                                     )}
                                 </div>
