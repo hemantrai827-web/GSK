@@ -4,17 +4,14 @@ import { useApp } from '../context/AppContext';
 import { Button } from '../components/ui/Button';
 import { Shield, FileText, LayoutGrid, Users, Briefcase, AlertTriangle, History, BarChart3, Wallet, Save, RefreshCw, Trophy, Clock, Search, Send, CheckCircle, XCircle, Loader2, Filter, Dice5, Lock, Edit3, User as UserIcon, Crown } from 'lucide-react';
 import { User, Transaction } from '../types';
-import { collection, onSnapshot, query, updateDoc, doc, serverTimestamp, setDoc, orderBy, getDocs, getDoc, where } from 'firebase/firestore';
+import { collection, onSnapshot, query, updateDoc, doc, serverTimestamp, setDoc, orderBy, getDocs, getDoc, where, limit } from 'firebase/firestore';
 import { db } from '../firebase';
 import { sanitize, formatHourSlot } from '../utils/helpers';
 
 export const AdminPanel: React.FC = () => {
-  const { user, transactions, depositRequests, withdrawRequests, bets, processTransaction, approveDeposit, rejectDeposit, approveWithdraw, rejectWithdraw, createStaffAccount, adminAddFunds, showNotification, findUserByIdentifier, renewAccess, qrCodeUrl, processGameWinnings } = useApp();
+  const { user, games, transactions, depositRequests, withdrawRequests, bets, processTransaction, approveDeposit, rejectDeposit, approveWithdraw, rejectWithdraw, createStaffAccount, adminAddFunds, showNotification, findUserByIdentifier, renewAccess, qrCodeUrl, processGameWinnings, allUsers } = useApp();
   
   const [activeTab, setActiveTab] = useState<'dashboard' | 'results' | 'funds' | 'users' | 'requests' | 'staff' | 'live_bets' | 'agent_chats'>('results');
-  const [localUsers, setLocalUsers] = useState<User[]>([]);
-  const [loadingUsers, setLoadingUsers] = useState(false);
-  const [games, setGames] = useState<any[]>([]);
   const [gameInputs, setGameInputs] = useState<Record<string, string>>({});
   const [adminChats, setAdminChats] = useState<any[]>([]);
   const [agentPayments, setAgentPayments] = useState<any[]>([]);
@@ -50,37 +47,12 @@ export const AdminPanel: React.FC = () => {
       }
   }, [games, selectedAnalysisGameId]);
 
-  useEffect(() => {
-    if (user?.role === 'ADMIN' || user?.role === 'AGENT') {
-        setLoadingUsers(true);
-        const q = query(collection(db, 'users')); 
-        const unsub = onSnapshot(q, (snap) => {
-            const list = snap.docs.map(d => ({ id: d.id, ...sanitize(d.data()) } as User));
-            setLocalUsers(list);
-            setLoadingUsers(false);
-        });
-        return () => unsub();
-    }
-  }, [user?.role]);
 
-  useEffect(() => {
-    if (user?.role === 'ADMIN' || user?.role === 'AGENT') {
-        const q = query(collection(db, 'games'));
-        const unsub = onSnapshot(q, (snap) => {
-            const list = snap.docs.map(d => ({ id: d.id, ...d.data() }));
-            const sortedList = list.sort((a: any, b: any) => Number(a.hour_slot || 0) - Number(b.hour_slot || 0));
-            setGames(sortedList);
-        }, (error) => {
-            console.error("Error fetching games:", error);
-        });
-        return () => unsub();
-    }
-  }, [user?.role]);
 
   useEffect(() => {
     if (user?.role === 'ADMIN' && activeTab === 'agent_chats') {
         try {
-            const q = query(collection(db, 'agent_chats'), orderBy('timestamp', 'asc'));
+            const q = query(collection(db, 'agent_chats'), orderBy('timestamp', 'desc'), limit(10));
             const unsub = onSnapshot(q, (snap) => {
                 const list: any[] = [];
                 const now = Date.now();
@@ -90,11 +62,7 @@ export const AdminPanel: React.FC = () => {
                     const data = d.data();
                     const timestamp = data.timestamp?.toMillis ? data.timestamp.toMillis() : (data.timestamp || 0);
                     
-                    // Client-side cleanup simulation (In production, use Cloud Functions)
-                    if (now - timestamp > twentyFourHours) {
-                        // We could delete it here, but it's better to just filter it out
-                        // and let a real Cloud Function handle deletion to avoid multiple clients deleting
-                    } else {
+                    if (now - timestamp <= twentyFourHours) {
                         list.push({
                             id: d.id,
                             senderId: data.senderId,
@@ -104,7 +72,7 @@ export const AdminPanel: React.FC = () => {
                         });
                     }
                 });
-                setAdminChats(list);
+                setAdminChats(list.reverse());
             }, (error) => {
                 console.error("Error fetching agent chats:", error);
                 showNotification("Failed to load agent chats", "error");
@@ -119,17 +87,16 @@ export const AdminPanel: React.FC = () => {
   useEffect(() => {
     if (user?.role === 'ADMIN' && activeTab === 'agent_payments') {
         try {
-            const q = query(collection(db, 'agent_payments'), orderBy('timestamp', 'desc'));
-            const unsub = onSnapshot(q, (snap) => {
+            const q = query(collection(db, 'agent_payments'), orderBy('timestamp', 'desc'), limit(10));
+            getDocs(q).then((snap) => {
                 const list = snap.docs.map(d => ({ id: d.id, ...d.data() }));
                 setAgentPayments(list);
-            }, (error) => {
+            }).catch((error) => {
                 console.error("Error fetching agent payments:", error);
                 showNotification("Failed to load agent payments", "error");
             });
-            return () => unsub();
         } catch (error) {
-            console.error("Error setting up agent payments listener:", error);
+            console.error("Error fetching agent payments:", error);
         }
     }
   }, [user?.role, activeTab]);
@@ -196,7 +163,6 @@ export const AdminPanel: React.FC = () => {
       return { gridData, totalGameLoad };
   }, [bets, selectedAnalysisGameId, games]);
 
-  const allUsers = localUsers; 
 
   if (!user || (user.role !== 'ADMIN' && user.role !== 'AGENT' && user.role !== 'SUB_AGENT')) {
     return <div className="text-center text-red-500 py-10 font-bold text-xl">Access Denied: Unauthorized Role</div>;
@@ -735,7 +701,7 @@ export const AdminPanel: React.FC = () => {
                     <h3 className="text-xl font-bold text-white">Users Database</h3>
                     <input type="text" placeholder="Search..." value={userSearch} onChange={e => setUserSearch(e.target.value)} className="bg-slate-900 border border-slate-700 rounded-full px-4 py-1 text-sm text-white focus:border-yellow-500 outline-none" />
                 </div>
-                {loadingUsers ? <div className="text-center py-10 flex items-center justify-center gap-2 text-slate-400"><RefreshCw className="w-5 h-5 animate-spin"/> Loading Database...</div> : (
+                {allUsers.length === 0 ? <div className="text-center py-10 flex items-center justify-center gap-2 text-slate-400"><RefreshCw className="w-5 h-5 animate-spin"/> Loading Database...</div> : (
                     <div className="overflow-x-auto max-h-[600px] custom-scrollbar">
                         <table className="w-full text-left text-sm">
                             <thead className="bg-slate-800 text-slate-400 sticky top-0"><tr><th className="p-3">User</th><th className="p-3">Wallet</th><th className="p-3">Bank Details</th><th className="p-3">Role</th><th className="p-3 text-right">Actions</th></tr></thead>
@@ -817,7 +783,7 @@ export const AdminPanel: React.FC = () => {
                  <div className="mt-12">
                      <h3 className="text-xl font-bold text-white mb-6 flex items-center gap-2"><Users className="w-5 h-5"/> Existing Staff</h3>
                      <div className="space-y-4">
-                         {localUsers.filter(u => u.role === 'AGENT' || u.role === 'SUB_AGENT').map(staff => (
+                         {allUsers.filter(u => u.role === 'AGENT' || u.role === 'SUB_AGENT').map(staff => (
                              <div key={staff.id} className="bg-slate-900/50 p-4 rounded-lg border border-slate-700 flex justify-between items-center">
                                  <div>
                                      <div className="flex items-center gap-2">
@@ -834,7 +800,7 @@ export const AdminPanel: React.FC = () => {
                                  </div>
                              </div>
                          ))}
-                         {localUsers.filter(u => u.role === 'AGENT' || u.role === 'SUB_AGENT').length === 0 && (
+                         {allUsers.filter(u => u.role === 'AGENT' || u.role === 'SUB_AGENT').length === 0 && (
                              <div className="text-center text-slate-500 py-4">No staff members found</div>
                          )}
                      </div>

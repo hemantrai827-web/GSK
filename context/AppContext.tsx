@@ -140,9 +140,10 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
 
   useEffect(() => {
     let unsubUser = () => {};
-    let unsubSettings = () => {};
+    let settingsInterval: any;
 
     let unsubGames = () => {};
+    let unsubResults = () => {};
 
     try {
         if (user?.id) {
@@ -165,7 +166,7 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
             });
 
             if (user.role === 'ADMIN' || user.role === 'AGENT') {
-                getDocs(collection(db, 'users')).then((snap) => {
+                getDocs(query(collection(db, 'users'), limit(100))).then((snap) => {
                     const usersList = snap.docs.map(d => ({ id: d.id, ...sanitize(d.data()) } as User));
                     setAllUsers(usersList);
                 }).catch((err) => console.error("All Users Sync Error:", err));
@@ -175,9 +176,9 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
 
             let betsQ;
             if (user.role === 'ADMIN' || user.role === 'AGENT') {
-                betsQ = query(collection(db, 'bets'), orderBy('timestamp', 'desc'), limit(500));
+                betsQ = query(collection(db, 'bets'), orderBy('timestamp', 'desc'), limit(10));
             } else {
-                betsQ = query(collection(db, 'bets'), where('userId', '==', user.id));
+                betsQ = query(collection(db, 'bets'), where('userId', '==', user.id), orderBy('timestamp', 'desc'), limit(10));
             }
             getDocs(betsQ).then((snap) => {
                 const fetchedBets = snap.docs.map(d => ({ id: d.id, ...sanitize(d.data()) } as Bet));
@@ -188,20 +189,25 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
             }).catch((err) => console.error("Bets Sync Error:", err));
         }
 
-        unsubSettings = onSnapshot(collection(db, 'settings'), (snap) => {
-            snap.docs.forEach(d => {
-                const data = sanitize(d.data());
-                if (d.id === 'pending') setPendingResults(data as Record<string, string>);
-                if (d.id === 'config') {
-                    if (data.qrCodeUrl) setQrCodeUrl(data.qrCodeUrl);
-                    if (data.banner) setBannerConfig(data.banner);
-                    if (data.simulatedActivity !== undefined) setSimulatedActivityEnabled(data.simulatedActivity);
-                }
+        const fetchSettings = () => {
+            getDocs(collection(db, 'settings')).then((snap) => {
+                snap.docs.forEach(d => {
+                    const data = sanitize(d.data());
+                    if (d.id === 'pending') setPendingResults(data as Record<string, string>);
+                    if (d.id === 'config') {
+                        if (data.qrCodeUrl) setQrCodeUrl(data.qrCodeUrl);
+                        if (data.banner) setBannerConfig(data.banner);
+                        if (data.simulatedActivity !== undefined) setSimulatedActivityEnabled(data.simulatedActivity);
+                    }
+                });
+            }).catch((err) => {
+                console.error("Settings Sync Error:", err);
+                setConnectionStatus('ERROR');
             });
-        }, (err) => {
-            console.error("Settings Sync Error:", err);
-            setConnectionStatus('ERROR');
-        });
+        };
+        
+        fetchSettings();
+        settingsInterval = setInterval(fetchSettings, 60000);
 
         unsubGames = onSnapshot(collection(db, 'games'), (snap) => {
             const now = Date.now();
@@ -230,7 +236,7 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
             setConnectionStatus('ERROR');
         });
 
-        getDocs(query(collection(db, 'results'), orderBy('publishTime', 'desc'), limit(300))).then((snap) => {
+        unsubResults = onSnapshot(query(collection(db, 'results'), orderBy('publishTime', 'desc'), limit(300)), (snap) => {
             const results = snap.docs.map(d => {
                 const data = sanitize(d.data());
                 return {
@@ -240,12 +246,12 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
                 } as ResultLog;
             });
             setRawResults(results);
-        }).catch((err) => console.error("Results Sync Error:", err));
+        }, (err) => console.error("Results Sync Error:", err));
     } catch (e) {
         console.error("Firestore subscription setup failed", e);
     }
 
-    return () => { unsubUser(); unsubSettings(); unsubGames(); };
+    return () => { unsubUser(); clearInterval(settingsInterval); unsubGames(); unsubResults(); };
   }, [user?.id, user?.role]); 
 
   useEffect(() => {
@@ -257,13 +263,13 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
         const wdRef = collection(db, 'withdraw_requests');
         
         if (user.role === 'ADMIN' || user.role === 'AGENT' || user.role === 'SUB_AGENT') {
-            qTx = query(txRef, orderBy('timestamp', 'desc'), limit(200)); 
-            qDep = query(depRef, orderBy('createdAt', 'desc'), limit(200));
-            qWd = query(wdRef, orderBy('timestamp', 'desc'), limit(200));
+            qTx = query(txRef, orderBy('timestamp', 'desc'), limit(10)); 
+            qDep = query(depRef, orderBy('createdAt', 'desc'), limit(10));
+            qWd = query(wdRef, orderBy('timestamp', 'desc'), limit(10));
         } else {
-            qTx = query(txRef, where('userId', '==', user.id)); 
-            qDep = query(depRef, where('userId', '==', user.id));
-            qWd = query(wdRef, where('userId', '==', user.id));
+            qTx = query(txRef, where('userId', '==', user.id), orderBy('timestamp', 'desc'), limit(10)); 
+            qDep = query(depRef, where('userId', '==', user.id), orderBy('createdAt', 'desc'), limit(10));
+            qWd = query(wdRef, where('userId', '==', user.id), orderBy('timestamp', 'desc'), limit(10));
         }
         
         getDocs(qTx).then((snap) => {
@@ -1129,7 +1135,7 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
       }
     };
 
-  const processTransaction = async (id: string, action: 'APPROVE' | 'REJECT') => {
+  const processTransaction = async (id: string, action: 'APPROVE' | 'REJECT' | 'COMPLETED' | 'REJECTED') => {
       if (user?.role !== 'ADMIN') throw "Permission Denied: Only Admins can process requests."; 
       let txData: Transaction | null = null;
       try {
@@ -1150,7 +1156,7 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
               
               txData = currentTx;
 
-              if (action === 'REJECT') {
+              if (action === 'REJECT' || action === 'REJECTED') {
                   if (currentTx.type === 'WITHDRAW') {
                       transaction.update(userRef, { 
                           wallet_balance: increment(currentTx.amount),
@@ -1165,9 +1171,13 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
                   } else if (currentTx.type === 'WITHDRAW') {
                       transaction.update(userRef, { lockedBalance: increment(-currentTx.amount) });
                       transaction.update(txRef, { status: 'COMPLETED' });
+                  } else {
+                      transaction.update(txRef, { status: 'COMPLETED' });
                   }
               }
           });
+          
+          setTransactions(prev => prev.map(tx => tx.id === id ? { ...tx, status: (action === 'REJECT' || action === 'REJECTED') ? 'REJECTED' : 'COMPLETED' } : tx));
       } catch (e: any) { 
           console.error("Process Transaction Error:", e);
           throw e; // Propagate error to caller

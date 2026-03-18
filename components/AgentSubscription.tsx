@@ -2,7 +2,7 @@ import React, { useState } from 'react';
 import { useApp } from '../context/AppContext';
 import { Button } from './ui/Button';
 import { Upload, CheckCircle, Clock, AlertTriangle, Image as ImageIcon } from 'lucide-react';
-import { doc, setDoc, collection, query, where, onSnapshot } from 'firebase/firestore';
+import { doc, setDoc, collection, query, where, getDocs } from 'firebase/firestore';
 import { db } from '../firebase';
 
 export const AgentSubscription: React.FC = () => {
@@ -15,14 +15,13 @@ export const AgentSubscription: React.FC = () => {
   React.useEffect(() => {
     if (!user) return;
     const q = query(collection(db, 'agent_payments'), where('agentId', '==', user.id), where('status', '==', 'pending'));
-    const unsub = onSnapshot(q, (snap) => {
+    getDocs(q).then((snap) => {
       if (!snap.empty) {
         setPendingSubscription({ id: snap.docs[0].id, ...snap.docs[0].data() });
       } else {
         setPendingSubscription(null);
       }
-    });
-    return () => unsub();
+    }).catch(err => console.error(err));
   }, [user]);
 
   if (!user || user.role !== 'AGENT') return null;
@@ -69,7 +68,7 @@ export const AgentSubscription: React.FC = () => {
     setIsSubmitting(true);
     try {
       const txId = 'sub-' + Date.now();
-      await setDoc(doc(db, 'agent_payments', txId), {
+      const newPayment = {
         id: txId,
         agentId: user.id,
         amount: 2000, // Fixed fee
@@ -77,8 +76,10 @@ export const AgentSubscription: React.FC = () => {
         timestamp: Date.now(),
         utr: utr,
         screenshotUrl: screenshot
-      });
+      };
+      await setDoc(doc(db, 'agent_payments', txId), newPayment);
       
+      setPendingSubscription(newPayment);
       showNotification('Subscription payment submitted for verification', 'success');
       setUtr('');
       setScreenshot(null);

@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { useApp } from '../context/AppContext';
 import { AgentSubscription } from '../components/AgentSubscription';
-import { collection, query, orderBy, onSnapshot, addDoc, serverTimestamp, doc, updateDoc, increment, setDoc } from 'firebase/firestore';
+import { collection, query, orderBy, onSnapshot, addDoc, serverTimestamp, doc, updateDoc, increment, setDoc, limit } from 'firebase/firestore';
 import { db } from '../firebase';
 import { Send, Clock, Wallet, ArrowRight, User as UserIcon } from 'lucide-react';
 import { Button } from '../components/ui/Button';
@@ -31,7 +31,7 @@ export const AgentPanel: React.FC = () => {
   useEffect(() => {
     if (expired) return;
 
-    const q = query(collection(db, 'agent_chats'), orderBy('timestamp', 'asc'));
+    const q = query(collection(db, 'agent_chats'), orderBy('timestamp', 'desc'), limit(10));
     const unsubscribe = onSnapshot(q, (snapshot) => {
       const chatData: AgentChat[] = [];
       const now = Date.now();
@@ -52,7 +52,7 @@ export const AgentPanel: React.FC = () => {
           });
         }
       });
-      setChats(chatData);
+      setChats(chatData.reverse());
       setTimeout(() => {
         chatEndRef.current?.scrollIntoView({ behavior: 'smooth' });
       }, 100);

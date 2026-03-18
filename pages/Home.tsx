@@ -4,7 +4,7 @@ import { useApp } from '../context/AppContext';
 import { Clock, TrendingUp, Phone, Trophy, Megaphone, Calendar, Table, CheckCircle, ShieldCheck, Zap, X, Sparkles, Crown } from 'lucide-react';
 import { Button } from '../components/ui/Button';
 import { RulesPopup } from '../components/RulesPopup';
-import { collection, onSnapshot, query, orderBy, limit } from 'firebase/firestore';
+import { collection, query, orderBy, limit } from 'firebase/firestore';
 import { db } from '../firebase';
 import { generateHistoryIfEmpty } from '../utils/historyGenerator';
 import { formatHourSlot } from '../utils/helpers';
@@ -187,9 +187,9 @@ export const Home: React.FC<{ navigateTo: (tab: string) => void }> = ({ navigate
           initial={{ y: -20, opacity: 0 }}
           animate={{ y: 0, opacity: 1 }}
           transition={{ duration: 0.6, type: "spring" }}
-          className="text-3xl md:text-4xl font-bold text-white serif mb-2 drop-shadow-lg leading-tight"
+          className="text-3xl md:text-5xl font-black text-transparent bg-clip-text bg-gradient-to-r from-yellow-300 via-yellow-500 to-yellow-600 serif mb-2 drop-shadow-lg leading-tight"
         >
-          Gwalior Satta King Official
+          Gwalior Satta King Live Results
         </motion.h1>
         <motion.p 
           initial={{ y: 20, opacity: 0 }}
@@ -262,6 +262,15 @@ export const Home: React.FC<{ navigateTo: (tab: string) => void }> = ({ navigate
          </motion.section>
       )}
 
+      {/* Top Ad Banner */}
+      <div className="w-full max-w-4xl mx-auto bg-slate-800/30 border border-white/5 rounded-xl p-4 text-center text-slate-500 my-6 backdrop-blur-sm">
+        <span className="text-[10px] uppercase tracking-widest opacity-50">Advertisement</span>
+        <div className="min-h-[90px] flex items-center justify-center">
+          {/* Ad script placeholder */}
+          <p className="text-sm">Top Banner Ad Space</p>
+        </div>
+      </div>
+
       {games.length === 0 ? (
         <div className="text-center py-20 text-slate-400 animate-pulse">
           <p className="text-xl">Loading games data...</p>
@@ -269,69 +278,93 @@ export const Home: React.FC<{ navigateTo: (tab: string) => void }> = ({ navigate
       ) : (
         <section className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
           {games.map((game, idx) => {
-            const isSpecial = game.hour_slot === 20;
+            const themes = [
+              { bg: 'from-purple-900/40 to-slate-900/80', border: 'border-purple-500/50', shadow: 'hover:shadow-[0_0_30px_rgba(168,85,247,0.3)]', text: 'text-purple-300', icon: 'text-purple-400', boxBg: 'bg-purple-950/40 border-purple-500/30', resultText: 'text-purple-400', waitingText: 'text-purple-500/50', btnBg: 'bg-gradient-to-r from-purple-600 to-purple-400 hover:from-purple-500 hover:to-purple-300 shadow-purple-500/30', gradient: 'from-purple-500/20' },
+              { bg: 'from-blue-900/40 to-slate-900/80', border: 'border-blue-500/50', shadow: 'hover:shadow-[0_0_30px_rgba(59,130,246,0.3)]', text: 'text-blue-300', icon: 'text-blue-400', boxBg: 'bg-blue-950/40 border-blue-500/30', resultText: 'text-blue-400', waitingText: 'text-blue-500/50', btnBg: 'bg-gradient-to-r from-blue-600 to-blue-400 hover:from-blue-500 hover:to-blue-300 shadow-blue-500/30', gradient: 'from-blue-500/20' },
+              { bg: 'from-red-900/40 to-slate-900/80', border: 'border-red-500/50', shadow: 'hover:shadow-[0_0_30px_rgba(239,68,68,0.3)]', text: 'text-red-300', icon: 'text-red-400', boxBg: 'bg-red-950/40 border-red-500/30', resultText: 'text-red-400', waitingText: 'text-red-500/50', btnBg: 'bg-gradient-to-r from-red-600 to-red-400 hover:from-red-500 hover:to-red-300 shadow-red-500/30', gradient: 'from-red-500/20' },
+              { bg: 'from-green-900/40 to-slate-900/80', border: 'border-green-500/50', shadow: 'hover:shadow-[0_0_30px_rgba(34,197,94,0.3)]', text: 'text-green-300', icon: 'text-green-400', boxBg: 'bg-green-950/40 border-green-500/30', resultText: 'text-green-400', waitingText: 'text-green-500/50', btnBg: 'bg-gradient-to-r from-green-600 to-green-400 hover:from-green-500 hover:to-green-300 shadow-green-500/30', gradient: 'from-green-500/20' },
+              { bg: 'from-yellow-900/40 to-slate-900/80', border: 'border-yellow-500/50', shadow: 'hover:shadow-[0_0_30px_rgba(234,179,8,0.3)]', text: 'text-yellow-300', icon: 'text-yellow-400', boxBg: 'bg-yellow-950/40 border-yellow-500/30', resultText: 'text-yellow-400', waitingText: 'text-yellow-500/50', btnBg: 'bg-gradient-to-r from-yellow-600 to-yellow-400 hover:from-yellow-500 hover:to-yellow-300 shadow-yellow-500/30', gradient: 'from-yellow-500/20' },
+            ];
+            const theme = themes[idx % themes.length];
+            
+            let gameStatus = 'WAITING';
+            if (currentHour === game.hour_slot) gameStatus = 'RUNNING';
+            else if (currentHour > game.hour_slot) gameStatus = 'RESULT';
+
             return (
             <motion.article 
               initial={{ opacity: 0, y: 20 }}
               animate={{ opacity: 1, y: 0 }}
               transition={{ duration: 0.5, delay: idx * 0.1 }}
               key={game.id} 
-              className={`relative group overflow-hidden rounded-xl border transition-all duration-300 hover:shadow-2xl hover:-translate-y-2 ${isSpecial ? 'bg-gradient-to-br from-purple-900/60 to-slate-900 border-purple-500 shadow-[0_0_30px_rgba(168,85,247,0.2)] md:scale-105 z-10' : 'bg-slate-900/50 border-slate-700 hover:border-slate-600'}`}
+              className={`relative group overflow-hidden rounded-2xl border backdrop-blur-md transition-all duration-500 hover:-translate-y-2 bg-gradient-to-br ${theme.bg} ${theme.border} ${theme.shadow} z-10`}
             >
-              {isSpecial && (
-                <div className="absolute top-0 right-0 p-3">
-                  <Crown className="w-6 h-6 text-yellow-400 animate-pulse" />
-                </div>
-              )}
-              <div className="p-6">
+              <div className="p-6 relative z-20">
                 <div className="flex justify-between items-start mb-4">
                   <div>
-                    <h3 className={`text-xl font-bold mb-1 tracking-tight flex items-center gap-2 ${isSpecial ? 'text-purple-300' : 'text-white'}`}>
+                    <h3 className={`text-2xl font-black mb-1 tracking-tight flex items-center gap-2 ${theme.text} drop-shadow-md`}>
                       {game.name}
-                      {isSpecial && <Sparkles className="w-4 h-4 text-purple-400" />}
+                      <Sparkles className={`w-5 h-5 ${theme.icon} animate-pulse`} />
                     </h3>
-                    <div className={`flex items-center gap-2 text-xs ${isSpecial ? 'text-purple-200/70' : 'text-slate-400'}`}>
-                      <Clock className="w-3 h-3" />
-                      <span>Timing: {formatHourSlot(game.hour_slot)}</span>
+                    <div className={`flex items-center gap-2 text-sm font-medium ${theme.text} opacity-80`}>
+                      <Clock className="w-4 h-4" />
+                      <span>{formatHourSlot(game.hour_slot)}</span>
                     </div>
+                  </div>
+                  <div className={`px-3 py-1 rounded-full text-[10px] font-black uppercase tracking-widest border ${
+                    gameStatus === 'RUNNING' ? 'bg-green-500/20 text-green-400 border-green-500/50 animate-pulse' : 
+                    gameStatus === 'RESULT' ? 'bg-blue-500/20 text-blue-400 border-blue-500/50' : 
+                    'bg-yellow-500/20 text-yellow-400 border-yellow-500/50'
+                  }`}>
+                    {gameStatus}
                   </div>
                 </div>
                 
-                <div className={`flex items-center justify-center py-4 my-2 rounded-lg border shadow-inner transition-colors ${isSpecial ? 'bg-purple-950/50 border-purple-500/30 group-hover:bg-purple-900/50' : 'bg-black/40 border-white/5 group-hover:bg-black/60'}`}>
+                <div className={`flex items-center justify-center py-6 my-4 rounded-xl border shadow-inner transition-colors ${theme.boxBg} group-hover:bg-black/40 backdrop-blur-sm relative overflow-hidden`}>
+                  <div className={`absolute inset-0 bg-gradient-to-b ${theme.gradient} opacity-0 group-hover:opacity-100 transition-opacity duration-500`}></div>
                   {getTodayResult(game.id) !== '----' ? (
-                    <span className={`text-4xl font-mono font-bold tracking-widest drop-shadow group-hover:scale-110 transition-transform ${isSpecial ? 'text-purple-400' : 'text-yellow-400'}`}>
+                    <span className={`text-5xl font-mono font-black tracking-widest drop-shadow-[0_0_15px_rgba(255,255,255,0.3)] group-hover:scale-110 transition-transform duration-500 ${theme.resultText}`}>
                       {getTodayResult(game.id)}
                     </span>
                   ) : (
-                    <span className={`text-2xl font-mono font-bold animate-pulse ${isSpecial ? 'text-purple-500/50' : 'text-slate-600'}`}>
+                    <span className={`text-3xl font-mono font-black animate-pulse tracking-widest ${theme.waitingText}`}>
                       WAITING...
                     </span>
                   )}
                 </div>
 
-                <div className="flex justify-between items-center mt-4">
+                <div className="flex justify-between items-center mt-6 bg-black/20 rounded-lg p-3 border border-white/5">
                    <div className="flex flex-col items-center flex-1 border-r border-white/10">
-                      <span className="text-[10px] text-slate-500 uppercase tracking-wider mb-1">Yesterday</span>
-                      <span className="font-mono font-bold text-slate-300">{getYesterdayResult(game.id)}</span>
+                      <span className="text-[10px] text-slate-400 uppercase tracking-widest mb-1 font-semibold">Yesterday</span>
+                      <span className="font-mono font-bold text-lg text-slate-200">{getYesterdayResult(game.id)}</span>
                    </div>
                    <div className="flex flex-col items-center flex-1">
-                      <span className="text-[10px] text-slate-500 uppercase tracking-wider mb-1">Today</span>
-                      <span className={`font-mono font-bold ${getTodayResult(game.id) !== '----' ? 'text-yellow-400' : 'text-slate-500'}`}>
+                      <span className="text-[10px] text-slate-400 uppercase tracking-widest mb-1 font-semibold">Today</span>
+                      <span className={`font-mono font-bold text-lg ${getTodayResult(game.id) !== '----' ? theme.resultText : 'text-slate-500'}`}>
                           {getTodayResult(game.id)}
                       </span>
                    </div>
                 </div>
-                <div className="mt-4 text-center">
-                   <Button variant={isSpecial ? "default" : "secondary"} size="sm" onClick={() => navigateTo('casino')} className={`w-full ${isSpecial ? "bg-purple-600 hover:bg-purple-500 text-white shadow-lg shadow-purple-500/30" : "border-slate-600 hover:bg-slate-700 hover:text-white transform hover:scale-105 transition-transform"}`}>
+                <div className="mt-6 text-center">
+                   <Button onClick={() => navigateTo('casino')} className={`w-full text-white font-bold text-lg py-6 rounded-xl shadow-lg transform group-hover:scale-105 transition-all duration-300 border-0 ${theme.btnBg}`}>
                      Play Now
                    </Button>
                 </div>
               </div>
-              <div className={`absolute inset-0 bg-gradient-to-tr pointer-events-none opacity-0 group-hover:opacity-100 transition-opacity ${isSpecial ? 'from-purple-500/10 to-transparent' : 'from-white/5 to-transparent'}`} />
+              <div className={`absolute inset-0 bg-gradient-to-tr pointer-events-none opacity-0 group-hover:opacity-100 transition-opacity duration-700 ${theme.gradient}`} />
             </motion.article>
           )})}
         </section>
       )}
+
+      {/* Middle Ad Banner */}
+      <div className="w-full max-w-4xl mx-auto bg-slate-800/30 border border-white/5 rounded-xl p-4 text-center text-slate-500 my-8 backdrop-blur-sm">
+        <span className="text-[10px] uppercase tracking-widest opacity-50">Advertisement</span>
+        <div className="min-h-[90px] flex items-center justify-center">
+          {/* Ad script placeholder */}
+          <p className="text-sm">Middle Banner Ad Space</p>
+        </div>
+      </div>
 
       <motion.section 
         initial={{ opacity: 0, y: 30 }}
@@ -412,6 +445,33 @@ export const Home: React.FC<{ navigateTo: (tab: string) => void }> = ({ navigate
                   </table>
               </div>
           </div>
+      </motion.section>
+
+      {/* Bottom Ad Banner */}
+      <div className="w-full max-w-4xl mx-auto bg-slate-800/30 border border-white/5 rounded-xl p-4 text-center text-slate-500 my-8 backdrop-blur-sm">
+        <span className="text-[10px] uppercase tracking-widest opacity-50">Advertisement</span>
+        <div className="min-h-[90px] flex items-center justify-center">
+          {/* Ad script placeholder */}
+          <p className="text-sm">Bottom Banner Ad Space</p>
+        </div>
+      </div>
+
+      <motion.section 
+        initial={{ opacity: 0 }}
+        whileInView={{ opacity: 1 }}
+        viewport={{ once: true }}
+        className="mt-12 p-6 bg-slate-900/50 rounded-2xl border border-white/5 text-slate-400 text-sm leading-relaxed"
+      >
+        <h2 className="text-xl font-bold text-white mb-4">About Gwalior Satta King</h2>
+        <p className="mb-4">
+          Welcome to the official <strong>Gwalior Satta King</strong> platform. We provide the fastest and most accurate live results for all major Satta games including Gwalior Day, Gwalior Night, and more. Our premium platform ensures a smooth, secure, and world-class gaming experience.
+        </p>
+        <p className="mb-4">
+          Check <strong>Satta King Gwalior</strong> results daily, view historical charts, and stay updated with the latest winning numbers. Whether you are looking for the <strong>Gwalior Result Today</strong> or past records, our comprehensive chart system has you covered.
+        </p>
+        <p>
+          Play responsibly and enjoy the thrill of the game with the most trusted name in the industry.
+        </p>
       </motion.section>
     </motion.div>
   );
