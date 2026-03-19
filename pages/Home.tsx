@@ -1,7 +1,7 @@
 
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { useApp } from '../context/AppContext';
-import { Clock, TrendingUp, Phone, Trophy, Megaphone, Calendar, Table, CheckCircle, ShieldCheck, Zap, X, Sparkles, Crown } from 'lucide-react';
+import { Clock, TrendingUp, Phone, Trophy, Megaphone, Calendar, Table, CheckCircle, ShieldCheck, Zap, X, Sparkles, Crown, Play } from 'lucide-react';
 import { Button } from '../components/ui/Button';
 import { RulesPopup } from '../components/RulesPopup';
 import { collection, query, orderBy, limit } from 'firebase/firestore';
@@ -10,8 +10,28 @@ import { generateHistoryIfEmpty } from '../utils/historyGenerator';
 import { formatHourSlot } from '../utils/helpers';
 import { motion } from 'motion/react';
 
+const NativeAd = () => {
+  const adRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    if (adRef.current && !adRef.current.hasChildNodes()) {
+      const script = document.createElement('script');
+      script.async = true;
+      script.setAttribute('data-cfasync', 'false');
+      script.src = 'https://pl28937033.effectivegatecpm.com/adfeb59b318e83204773b8469ddf3d31/invoke.js';
+      adRef.current.appendChild(script);
+      
+      const container = document.createElement('div');
+      container.id = 'container-adfeb59b318e83204773b8469ddf3d31';
+      adRef.current.appendChild(container);
+    }
+  }, []);
+
+  return <div ref={adRef} className="w-full flex justify-center items-center min-h-[90px]"></div>;
+};
+
 export const Home: React.FC<{ navigateTo: (tab: string) => void }> = ({ navigateTo }) => {
-  const { bannerConfig, games } = useApp();
+  const { bannerConfig, games, activeGames } = useApp();
   const [currentTime, setCurrentTime] = useState(new Date());
   const [activeMonthIdx, setActiveMonthIdx] = useState(0);
   const [gameHistory, setGameHistory] = useState<any[]>([]);
@@ -47,7 +67,7 @@ export const Home: React.FC<{ navigateTo: (tab: string) => void }> = ({ navigate
   const currentHour = currentTime.getHours();
   const currentMinute = currentTime.getMinutes();
   
-  const sortedGames = [...(games || [])].sort((a, b) => a.hour_slot - b.hour_slot);
+  const sortedGames = [...(activeGames || [])].sort((a, b) => a.hour_slot - b.hour_slot);
   const pastGames = sortedGames.filter(g => g.hour_slot <= currentHour);
   const latestOpenedGame = pastGames.length > 0 ? pastGames[pastGames.length - 1] : (sortedGames.length > 0 ? sortedGames[sortedGames.length - 1] : null);
 
@@ -124,6 +144,22 @@ export const Home: React.FC<{ navigateTo: (tab: string) => void }> = ({ navigate
       countdown = `${displayMinutes.toString().padStart(2, '0')}:${displaySeconds.toString().padStart(2, '0')}`;
     }
   }
+
+  const historyGames = React.useMemo(() => {
+      const gamesMap = new Map();
+      if (gameHistory && gameHistory.length > 0) {
+          gameHistory.forEach(res => {
+              if (res.gameId && !gamesMap.has(res.gameId)) {
+                  gamesMap.set(res.gameId, {
+                      id: res.gameId,
+                      name: res.gameName || 'Unknown',
+                      hour_slot: res.hour_slot
+                  });
+              }
+          });
+      }
+      return Array.from(gamesMap.values()).sort((a: any, b: any) => Number(a.hour_slot) - Number(b.hour_slot));
+  }, [gameHistory]);
 
   const historyData = React.useMemo(() => {
       if (!gameHistory || gameHistory.length === 0) return [];
@@ -263,108 +299,118 @@ export const Home: React.FC<{ navigateTo: (tab: string) => void }> = ({ navigate
       )}
 
       {/* Top Ad Banner */}
-      <div className="w-full max-w-4xl mx-auto bg-slate-800/30 border border-white/5 rounded-xl p-4 text-center text-slate-500 my-6 backdrop-blur-sm">
-        <span className="text-[10px] uppercase tracking-widest opacity-50">Advertisement</span>
-        <div className="min-h-[90px] flex items-center justify-center">
-          {/* Ad script placeholder */}
-          <p className="text-sm">Top Banner Ad Space</p>
-        </div>
+      <div className="w-full max-w-4xl mx-auto bg-slate-900/50 border border-white/5 rounded-xl p-4 text-center text-slate-500 my-6 backdrop-blur-sm shadow-lg">
+        <span className="text-[10px] uppercase tracking-widest opacity-50 mb-2 block">Advertisement</span>
+        <NativeAd />
       </div>
 
-      {games.length === 0 ? (
-        <div className="text-center py-20 text-slate-400 animate-pulse">
-          <p className="text-xl">Loading games data...</p>
+      {activeGames.length === 0 ? (
+        <div className="flex flex-wrap justify-center gap-4">
+          {[1, 2, 3, 4, 5, 6].map((i) => (
+            <div key={i} className="w-full sm:w-[calc(50%-0.5rem)] lg:w-[calc(33.333%-0.666rem)] h-[260px] rounded-xl bg-slate-800/40 border border-white/5 relative overflow-hidden">
+              <div className="absolute inset-0 -translate-x-full animate-[shimmer_2s_infinite] bg-gradient-to-r from-transparent via-white/5 to-transparent"></div>
+            </div>
+          ))}
         </div>
       ) : (
-        <section className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-          {games.map((game, idx) => {
-            const themes = [
-              { bg: 'from-purple-900/40 to-slate-900/80', border: 'border-purple-500/50', shadow: 'hover:shadow-[0_0_30px_rgba(168,85,247,0.3)]', text: 'text-purple-300', icon: 'text-purple-400', boxBg: 'bg-purple-950/40 border-purple-500/30', resultText: 'text-purple-400', waitingText: 'text-purple-500/50', btnBg: 'bg-gradient-to-r from-purple-600 to-purple-400 hover:from-purple-500 hover:to-purple-300 shadow-purple-500/30', gradient: 'from-purple-500/20' },
-              { bg: 'from-blue-900/40 to-slate-900/80', border: 'border-blue-500/50', shadow: 'hover:shadow-[0_0_30px_rgba(59,130,246,0.3)]', text: 'text-blue-300', icon: 'text-blue-400', boxBg: 'bg-blue-950/40 border-blue-500/30', resultText: 'text-blue-400', waitingText: 'text-blue-500/50', btnBg: 'bg-gradient-to-r from-blue-600 to-blue-400 hover:from-blue-500 hover:to-blue-300 shadow-blue-500/30', gradient: 'from-blue-500/20' },
-              { bg: 'from-red-900/40 to-slate-900/80', border: 'border-red-500/50', shadow: 'hover:shadow-[0_0_30px_rgba(239,68,68,0.3)]', text: 'text-red-300', icon: 'text-red-400', boxBg: 'bg-red-950/40 border-red-500/30', resultText: 'text-red-400', waitingText: 'text-red-500/50', btnBg: 'bg-gradient-to-r from-red-600 to-red-400 hover:from-red-500 hover:to-red-300 shadow-red-500/30', gradient: 'from-red-500/20' },
-              { bg: 'from-green-900/40 to-slate-900/80', border: 'border-green-500/50', shadow: 'hover:shadow-[0_0_30px_rgba(34,197,94,0.3)]', text: 'text-green-300', icon: 'text-green-400', boxBg: 'bg-green-950/40 border-green-500/30', resultText: 'text-green-400', waitingText: 'text-green-500/50', btnBg: 'bg-gradient-to-r from-green-600 to-green-400 hover:from-green-500 hover:to-green-300 shadow-green-500/30', gradient: 'from-green-500/20' },
-              { bg: 'from-yellow-900/40 to-slate-900/80', border: 'border-yellow-500/50', shadow: 'hover:shadow-[0_0_30px_rgba(234,179,8,0.3)]', text: 'text-yellow-300', icon: 'text-yellow-400', boxBg: 'bg-yellow-950/40 border-yellow-500/30', resultText: 'text-yellow-400', waitingText: 'text-yellow-500/50', btnBg: 'bg-gradient-to-r from-yellow-600 to-yellow-400 hover:from-yellow-500 hover:to-yellow-300 shadow-yellow-500/30', gradient: 'from-yellow-500/20' },
-            ];
-            const theme = themes[idx % themes.length];
-            
-            let gameStatus = 'WAITING';
-            if (currentHour === game.hour_slot) gameStatus = 'RUNNING';
-            else if (currentHour > game.hour_slot) gameStatus = 'RESULT';
-
+        <div className="space-y-8">
+          {Array.from({ length: Math.ceil(activeGames.length / 6) }).map((_, chunkIndex) => {
+            const chunkGames = activeGames.slice(chunkIndex * 6, (chunkIndex + 1) * 6);
             return (
-            <motion.article 
-              initial={{ opacity: 0, y: 20 }}
-              animate={{ opacity: 1, y: 0 }}
-              transition={{ duration: 0.5, delay: idx * 0.1 }}
-              key={game.id} 
-              className={`relative group overflow-hidden rounded-2xl border backdrop-blur-md transition-all duration-500 hover:-translate-y-2 bg-gradient-to-br ${theme.bg} ${theme.border} ${theme.shadow} z-10`}
-            >
-              <div className="p-6 relative z-20">
-                <div className="flex justify-between items-start mb-4">
-                  <div>
-                    <h3 className={`text-2xl font-black mb-1 tracking-tight flex items-center gap-2 ${theme.text} drop-shadow-md`}>
-                      {game.name}
-                      <Sparkles className={`w-5 h-5 ${theme.icon} animate-pulse`} />
-                    </h3>
-                    <div className={`flex items-center gap-2 text-sm font-medium ${theme.text} opacity-80`}>
-                      <Clock className="w-4 h-4" />
-                      <span>{formatHourSlot(game.hour_slot)}</span>
-                    </div>
-                  </div>
-                  <div className={`px-3 py-1 rounded-full text-[10px] font-black uppercase tracking-widest border ${
-                    gameStatus === 'RUNNING' ? 'bg-green-500/20 text-green-400 border-green-500/50 animate-pulse' : 
-                    gameStatus === 'RESULT' ? 'bg-blue-500/20 text-blue-400 border-blue-500/50' : 
-                    'bg-yellow-500/20 text-yellow-400 border-yellow-500/50'
-                  }`}>
-                    {gameStatus}
-                  </div>
-                </div>
-                
-                <div className={`flex items-center justify-center py-6 my-4 rounded-xl border shadow-inner transition-colors ${theme.boxBg} group-hover:bg-black/40 backdrop-blur-sm relative overflow-hidden`}>
-                  <div className={`absolute inset-0 bg-gradient-to-b ${theme.gradient} opacity-0 group-hover:opacity-100 transition-opacity duration-500`}></div>
-                  {getTodayResult(game.id) !== '----' ? (
-                    <span className={`text-5xl font-mono font-black tracking-widest drop-shadow-[0_0_15px_rgba(255,255,255,0.3)] group-hover:scale-110 transition-transform duration-500 ${theme.resultText}`}>
-                      {getTodayResult(game.id)}
-                    </span>
-                  ) : (
-                    <span className={`text-3xl font-mono font-black animate-pulse tracking-widest ${theme.waitingText}`}>
-                      WAITING...
-                    </span>
-                  )}
-                </div>
+              <React.Fragment key={chunkIndex}>
+                <section className="flex flex-wrap justify-center gap-4">
+                  {chunkGames.map((game, idx) => {
+                    let gameStatus = 'WAITING';
+                    if (currentHour === game.hour_slot) gameStatus = 'RUNNING';
+                    else if (currentHour > game.hour_slot) gameStatus = 'RESULT';
 
-                <div className="flex justify-between items-center mt-6 bg-black/20 rounded-lg p-3 border border-white/5">
-                   <div className="flex flex-col items-center flex-1 border-r border-white/10">
-                      <span className="text-[10px] text-slate-400 uppercase tracking-widest mb-1 font-semibold">Yesterday</span>
-                      <span className="font-mono font-bold text-lg text-slate-200">{getYesterdayResult(game.id)}</span>
-                   </div>
-                   <div className="flex flex-col items-center flex-1">
-                      <span className="text-[10px] text-slate-400 uppercase tracking-widest mb-1 font-semibold">Today</span>
-                      <span className={`font-mono font-bold text-lg ${getTodayResult(game.id) !== '----' ? theme.resultText : 'text-slate-500'}`}>
-                          {getTodayResult(game.id)}
-                      </span>
-                   </div>
-                </div>
-                <div className="mt-6 text-center">
-                   <Button onClick={() => navigateTo('casino')} className={`w-full text-white font-bold text-lg py-6 rounded-xl shadow-lg transform group-hover:scale-105 transition-all duration-300 border-0 ${theme.btnBg}`}>
-                     Play Now
-                   </Button>
-                </div>
-              </div>
-              <div className={`absolute inset-0 bg-gradient-to-tr pointer-events-none opacity-0 group-hover:opacity-100 transition-opacity duration-700 ${theme.gradient}`} />
-            </motion.article>
-          )})}
-        </section>
+                    return (
+                    <motion.article 
+                      initial={{ opacity: 0, y: 15 }}
+                      animate={{ opacity: 1, y: 0 }}
+                      transition={{ duration: 0.4, delay: idx * 0.05 }}
+                      key={game.id} 
+                      className="w-full sm:w-[calc(50%-0.5rem)] lg:w-[calc(33.333%-0.666rem)] relative group overflow-hidden rounded-xl border border-white/5 bg-gradient-to-b from-slate-900 to-black backdrop-blur-sm transition-all duration-300 ease-out hover:scale-[1.02] hover:border-yellow-500/30 hover:shadow-[0_8px_30px_rgba(234,179,8,0.1)] z-10 flex flex-col"
+                    >
+                      <div className="p-4 md:p-5 relative z-20 flex flex-col h-full">
+                        <div className="flex justify-between items-start mb-3">
+                          <div>
+                            <h3 className="text-lg md:text-xl font-bold mb-0.5 tracking-tight flex items-center gap-1.5 text-white drop-shadow-sm">
+                              {game.name}
+                              <Sparkles className="w-3.5 h-3.5 text-yellow-500 opacity-80" />
+                            </h3>
+                            <div className="flex items-center gap-1.5 text-xs font-medium text-slate-400">
+                              <Clock className="w-3 h-3" />
+                              <span>{formatHourSlot(game.hour_slot)}</span>
+                            </div>
+                          </div>
+                          <div className={`px-2 py-0.5 rounded text-[9px] font-bold uppercase tracking-wider border ${
+                            gameStatus === 'RUNNING' ? 'bg-green-500/10 text-green-400 border-green-500/20 animate-pulse' : 
+                            gameStatus === 'RESULT' ? 'bg-blue-500/10 text-blue-400 border-blue-500/20' : 
+                            'bg-yellow-500/10 text-yellow-400 border-yellow-500/20'
+                          }`}>
+                            {gameStatus}
+                          </div>
+                        </div>
+                        
+                        <div className="flex items-center justify-center py-4 my-2 rounded-lg border border-white/5 bg-black/40 shadow-inner transition-colors group-hover:bg-black/60 group-hover:border-yellow-500/20 relative overflow-hidden">
+                          <div className="absolute inset-0 bg-gradient-to-b from-yellow-500/5 to-transparent opacity-0 group-hover:opacity-100 transition-opacity duration-300"></div>
+                          {getTodayResult(game.id) !== '----' ? (
+                            <span className="text-4xl font-mono font-bold tracking-widest text-yellow-400 drop-shadow-[0_0_10px_rgba(234,179,8,0.2)] group-hover:scale-105 transition-transform duration-300">
+                              {getTodayResult(game.id)}
+                            </span>
+                          ) : (
+                            <span className="text-2xl font-mono font-bold animate-pulse tracking-widest text-slate-500 group-hover:text-slate-400 transition-colors duration-300">
+                              WAITING
+                            </span>
+                          )}
+                        </div>
+
+                        <div className="flex justify-between items-center mt-3 bg-slate-800/30 rounded-md p-2 border border-white/5">
+                           <div className="flex flex-col items-center flex-1 border-r border-white/10">
+                              <span className="text-[9px] text-slate-500 uppercase tracking-wider mb-0.5 font-semibold">Yesterday</span>
+                              <span className="font-mono font-bold text-sm text-slate-300">{getYesterdayResult(game.id)}</span>
+                           </div>
+                           <div className="flex flex-col items-center flex-1">
+                              <span className="text-[9px] text-slate-500 uppercase tracking-wider mb-0.5 font-semibold">Today</span>
+                              <span className={`font-mono font-bold text-sm ${getTodayResult(game.id) !== '----' ? 'text-yellow-400' : 'text-slate-500'}`}>
+                                  {getTodayResult(game.id)}
+                              </span>
+                           </div>
+                        </div>
+                        
+                        <div className="mt-auto pt-4 flex justify-center">
+                           <button onClick={() => navigateTo('casino')} className="flex items-center justify-center gap-2 text-black font-bold text-sm py-2 px-6 rounded-full shadow-md transform transition-all duration-300 border border-yellow-400/50 bg-gradient-to-r from-yellow-500 to-yellow-600 hover:scale-110 hover:shadow-[0_0_15px_rgba(234,179,8,0.4)] hover:border-yellow-300">
+                             <Play className="w-4 h-4 fill-black" />
+                             Play Now
+                           </button>
+                        </div>
+                      </div>
+                      <div className="absolute inset-0 bg-gradient-to-tr from-yellow-500/5 to-transparent pointer-events-none opacity-0 group-hover:opacity-100 transition-opacity duration-500" />
+                    </motion.article>
+                  )})}
+                </section>
+                
+                {/* Middle Ad Banner after every 6 cards */}
+                {(chunkIndex + 1) * 6 <= activeGames.length && (
+                  <div className="w-full max-w-4xl mx-auto bg-slate-900/50 border border-white/5 rounded-xl p-4 text-center text-slate-500 my-8 backdrop-blur-sm shadow-lg">
+                    <span className="text-[10px] uppercase tracking-widest opacity-50 mb-2 block">Advertisement</span>
+                    <NativeAd />
+                  </div>
+                )}
+              </React.Fragment>
+            );
+          })}
+        </div>
       )}
 
-      {/* Middle Ad Banner */}
-      <div className="w-full max-w-4xl mx-auto bg-slate-800/30 border border-white/5 rounded-xl p-4 text-center text-slate-500 my-8 backdrop-blur-sm">
-        <span className="text-[10px] uppercase tracking-widest opacity-50">Advertisement</span>
-        <div className="min-h-[90px] flex items-center justify-center">
-          {/* Ad script placeholder */}
-          <p className="text-sm">Middle Banner Ad Space</p>
+      {/* Middle Ad Banner (Fallback if less than 6 games) */}
+      {activeGames.length > 0 && activeGames.length < 6 && (
+        <div className="w-full max-w-4xl mx-auto bg-slate-900/50 border border-white/5 rounded-xl p-4 text-center text-slate-500 my-8 backdrop-blur-sm shadow-lg">
+          <span className="text-[10px] uppercase tracking-widest opacity-50 mb-2 block">Advertisement</span>
+          <NativeAd />
         </div>
-      </div>
+      )}
 
       <motion.section 
         initial={{ opacity: 0, y: 30 }}
@@ -409,7 +455,7 @@ export const Home: React.FC<{ navigateTo: (tab: string) => void }> = ({ navigate
                                       <Calendar className="w-4 h-4" /> Date
                                   </div>
                               </th>
-                              {games.map(game => (
+                              {historyGames.map(game => (
                                   <th key={game.id} className="p-4 border-b border-slate-800 min-w-[100px]">
                                       <div className="font-bold tracking-tight">{game.name}</div>
                                       <div className="text-[10px] text-slate-500 opacity-70 mt-1 font-mono">Timing: {formatHourSlot(game.hour_slot)}</div>
@@ -426,7 +472,7 @@ export const Home: React.FC<{ navigateTo: (tab: string) => void }> = ({ navigate
                                   <td className="p-3 border-r border-slate-800 font-bold text-slate-400 sticky left-0 z-10 bg-slate-900/95 backdrop-blur-sm border-b border-slate-800 shadow-[2px_0_10px_rgba(0,0,0,0.2)]">
                                       {day.date}
                                   </td>
-                                  {games.map(game => (
+                                  {historyGames.map(game => (
                                       <td key={game.id} className="p-3 border-b border-slate-800/50">
                                           <span className={`
                                               inline-block w-8 h-8 leading-8 rounded-full font-mono font-bold text-base transition-transform hover:scale-110 cursor-default
@@ -448,12 +494,9 @@ export const Home: React.FC<{ navigateTo: (tab: string) => void }> = ({ navigate
       </motion.section>
 
       {/* Bottom Ad Banner */}
-      <div className="w-full max-w-4xl mx-auto bg-slate-800/30 border border-white/5 rounded-xl p-4 text-center text-slate-500 my-8 backdrop-blur-sm">
-        <span className="text-[10px] uppercase tracking-widest opacity-50">Advertisement</span>
-        <div className="min-h-[90px] flex items-center justify-center">
-          {/* Ad script placeholder */}
-          <p className="text-sm">Bottom Banner Ad Space</p>
-        </div>
+      <div className="w-full max-w-4xl mx-auto bg-slate-900/50 border border-white/5 rounded-xl p-4 text-center text-slate-500 my-8 backdrop-blur-sm shadow-lg">
+        <span className="text-[10px] uppercase tracking-widest opacity-50 mb-2 block">Advertisement</span>
+        <NativeAd />
       </div>
 
       <motion.section 

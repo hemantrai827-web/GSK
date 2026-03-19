@@ -16,8 +16,6 @@ export const Navbar: React.FC<NavbarProps> = ({ activeTab, setActiveTab }) => {
   let navItems = [
     { id: 'home', label: 'Results', icon: LayoutDashboard },
     { id: 'casino', label: 'Matka Play', icon: Crown },
-    { id: 'games', label: 'Mini Games', icon: Gamepad2 },
-    { id: 'slots', label: 'Slots', icon: Gem },
     { id: 'wallet', label: 'Wallet', icon: Wallet },
   ];
 

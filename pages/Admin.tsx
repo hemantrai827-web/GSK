@@ -9,7 +9,7 @@ import { db } from '../firebase';
 import { sanitize, formatHourSlot } from '../utils/helpers';
 
 export const AdminPanel: React.FC = () => {
-  const { user, games, transactions, depositRequests, withdrawRequests, bets, processTransaction, approveDeposit, rejectDeposit, approveWithdraw, rejectWithdraw, createStaffAccount, adminAddFunds, showNotification, findUserByIdentifier, renewAccess, qrCodeUrl, processGameWinnings, allUsers } = useApp();
+  const { user, activeGames: games, transactions, depositRequests, withdrawRequests, bets, processTransaction, approveDeposit, rejectDeposit, approveWithdraw, rejectWithdraw, createStaffAccount, adminAddFunds, showNotification, findUserByIdentifier, renewAccess, qrCodeUrl, processGameWinnings, allUsers } = useApp();
   
   const [activeTab, setActiveTab] = useState<'dashboard' | 'results' | 'funds' | 'users' | 'requests' | 'staff' | 'live_bets' | 'agent_chats'>('results');
   const [gameInputs, setGameInputs] = useState<Record<string, string>>({});

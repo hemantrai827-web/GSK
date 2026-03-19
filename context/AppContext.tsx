@@ -1,6 +1,6 @@
 
 import React, { createContext, useContext, useState, useEffect, ReactNode, useRef } from 'react';
-import { User, BazaarResult, MatkaGame, Transaction, Bet, UserRole, ResultLog, BankDetails, SlotSpinResult, DepositRequest } from '../types';
+import { User, BazaarResult, MatkaGame, Transaction, Bet, UserRole, ResultLog, BankDetails, DepositRequest } from '../types';
 import { db, storage } from '../firebase';
 import { 
   collection, doc, setDoc, updateDoc, onSnapshot, query, where, 
@@ -9,7 +9,6 @@ import {
 } from 'firebase/firestore';
 import { ref, uploadBytes, getDownloadURL } from 'firebase/storage';
 import { sanitize } from '../utils/helpers';
-import { SLOT_GAMES, calculateSlotResult } from '../config/SlotGames';
 import { GAME_RULES } from '../config/GameRules';
 
 interface Notification {
@@ -30,6 +29,7 @@ interface AppContextType {
   findUserByIdentifier: (queryStr: string) => Promise<User | null>;
   adminAddFunds: (userId: string, amount: number) => Promise<boolean>; 
   games: any[];
+  activeGames: any[];
   historyResults: ResultLog[]; 
   scheduledResults: ResultLog[]; 
   transactions: Transaction[];
@@ -46,13 +46,10 @@ interface AppContextType {
   approveWithdraw: (id: string) => Promise<void>;
   rejectWithdraw: (id: string) => Promise<void>;
   uploadProof: (file: File) => Promise<string | null>;
-  placeBet: (gameId: string, gameType: 'BAZAAR' | 'MATKA' | 'MINI_GAME' | 'SLOT', selection: string, amount: number, roundId?: string) => Promise<string | null>;
+  placeBet: (gameId: string, gameType: 'BAZAAR' | 'MATKA', selection: string, amount: number, roundId?: string) => Promise<string | null>;
   processGameWinnings: (gameId: string, result: string, roundId?: string) => Promise<void>;
   placeBulkBets: (gameId: string, gameType: 'BAZAAR' | 'MATKA', betsList: { selection: string; amount: number }[], roundId?: string) => Promise<boolean>;
   isBetting: boolean;
-  
-  // Slot Specific
-  handleSlotSpin: (gameId: string, betAmount: number) => Promise<SlotSpinResult | null>;
 
   deleteResult: (id: string) => void;
   maintainResultHistory: () => Promise<void>;
@@ -101,6 +98,7 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
   const [simulatedActivityEnabled, setSimulatedActivityEnabled] = useState(true);
 
   const [games, setGames] = useState<any[]>([]);
+  const [activeGames, setActiveGames] = useState<any[]>([]);
   const [clockTick, setClockTick] = useState(Date.now());
 
   const showNotification = (message: string, type: 'success' | 'error' | 'info') => {
@@ -231,6 +229,7 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
             });
             const sortedList = list.sort((a, b) => Number(a.hour_slot || 0) - Number(b.hour_slot || 0));
             setGames(sortedList);
+            setActiveGames(sortedList.filter(game => !(Number(game.hour_slot) >= 22 || Number(game.hour_slot) <= 4)));
         }, (err) => {
             console.error("Games Sync Error:", err);
             setConnectionStatus('ERROR');
@@ -383,69 +382,6 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
     } catch(e) { console.error("Winnings process error", e); }
   };
 
-  const handleSlotSpin = async (gameId: string, betAmount: number): Promise<SlotSpinResult | null> => {
-    if (!user) return null;
-    const gameConfig = SLOT_GAMES.find(g => g.id === gameId);
-    if (!gameConfig) return null;
-
-    try {
-        let spinResult: SlotSpinResult | null = null;
-        let newBalance = 0;
-        let betData: any = {};
-        
-        await runTransaction(db, async (transaction) => {
-            const userRef = doc(db, 'users', user.id);
-            const userDoc = await transaction.get(userRef);
-            if (!userDoc.exists()) throw new Error("User Not Found");
-            const userData = userDoc.data() as User;
-            const currentBalance = Number(userData.wallet_balance) || 0;
-
-            if (currentBalance < betAmount) {
-                throw new Error("Insufficient Balance");
-            }
-
-            spinResult = calculateSlotResult(gameConfig, betAmount);
-            newBalance = currentBalance - betAmount + spinResult.totalWin;
-            
-            transaction.update(userRef, { wallet_balance: newBalance });
-
-            const betRef = doc(collection(db, 'bets'));
-            betData = {
-                id: betRef.id, 
-                userId: user.id, 
-                gameId: `slot_${gameId}`, 
-                game_name: gameConfig.name,
-                gameType: 'SLOT',
-                selection: 'SPIN', 
-                amount: betAmount, 
-                bet_amount: betAmount,
-                status: spinResult.isWin ? 'WON' : 'LOST',
-                result: spinResult.isWin ? 'WON' : 'LOST',
-                multiplier: spinResult.isWin ? (spinResult.totalWin / betAmount) : 0,
-                winAmount: spinResult.totalWin, 
-                timestamp: Date.now()
-            };
-            transaction.set(betRef, betData);
-        });
-
-        // Realtime update UI
-        setUser(prev => prev ? { ...prev, wallet_balance: newBalance } : null);
-        setBets(prev => [{ ...betData } as Bet, ...prev]);
-
-        return spinResult;
-
-    } catch (e: any) {
-        console.error("Slot Spin Error:", e);
-        const errorMsg = e.message || (typeof e === 'string' ? e : "Server busy. Please try again.");
-        if (errorMsg.includes("Quota") || errorMsg.includes("quota")) {
-            showNotification("Server busy. Please try again.", 'error');
-        } else {
-            showNotification(errorMsg, 'error');
-        }
-        return null;
-    }
-  };
-
   const register = async (email: string, mobile: string, password: string, referralCode?: string) => {
       try {
         const qEmail = query(collection(db, 'users'), where('email', '==', email));
@@ -577,7 +513,7 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
 
   const logout = () => { setUser(null); setAllUsers([]); };
 
-  const placeBet = async (gameId: string, gameType: 'BAZAAR' | 'MATKA' | 'MINI_GAME' | 'SLOT', selection: string, amount: number, roundId?: string): Promise<string | null> => {
+  const placeBet = async (gameId: string, gameType: 'BAZAAR' | 'MATKA', selection: string, amount: number, roundId?: string): Promise<string | null> => {
       if (!user || isBetting) return null;
       if (amount <= 0) { showNotification("Invalid Amount", 'error'); return null; }
 
@@ -600,9 +536,6 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
 
                 newBalance = currentBalance - amount;
                 let status: 'active' | 'COMPLETED' = 'active';
-                if (gameType === 'MINI_GAME' && !gameId.includes('wingo') && !gameId.includes('ludo') && !gameId.includes('aviator') && !gameId.includes('plinko')) {
-                    status = 'COMPLETED'; 
-                }
 
                 betData = {
                     id: betId, 
@@ -614,8 +547,6 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
                     bet_number: selection,
                     amount,
                     bet_amount: amount, 
-                    multiplier: 0, 
-                    result: status === 'COMPLETED' ? 'active' : status, 
                     status, 
                     timestamp: Date.now()
                 };
@@ -1231,8 +1162,8 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
   return (
     <AppContext.Provider value={{
       user, allUsers, register, createStaffAccount, login, logout, requestSubAgent, promoteToSubAgent, findUserByIdentifier, adminAddFunds,
-      games, historyResults, scheduledResults, transactions, depositRequests, withdrawRequests, bets, walletBalance: user?.wallet_balance || 0,
-      qrCodeUrl, updateQrCode, deposit, approveDeposit, rejectDeposit, withdraw, approveWithdraw, rejectWithdraw, uploadProof, placeBet, placeBulkBets, isBetting, handleSlotSpin, processGameWinnings,
+      games, activeGames, historyResults, scheduledResults, transactions, depositRequests, withdrawRequests, bets, walletBalance: user?.wallet_balance || 0,
+      qrCodeUrl, updateQrCode, deposit, approveDeposit, rejectDeposit, withdraw, approveWithdraw, rejectWithdraw, uploadProof, placeBet, placeBulkBets, isBetting, processGameWinnings,
       deleteResult, maintainResultHistory,
       addTransaction, processTransaction, referUser, bannerConfig, updateBanner, deleteBanner, pendingResults, connectionStatus,
       notification, showNotification, clearNotification, simulatedActivityEnabled, toggleSimulatedActivity, cancelPendingResult, renewAccess

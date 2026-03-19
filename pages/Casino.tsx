@@ -9,7 +9,7 @@ import { formatHourSlot } from '../utils/helpers';
 import { motion } from 'motion/react';
 
 export const Casino: React.FC = () => {
-  const { games, walletBalance, placeBulkBets, isBetting, historyResults } = useApp();
+  const { activeGames: games, walletBalance, placeBulkBets, isBetting, historyResults } = useApp();
   const [selectedGameId, setSelectedGameId] = useState<string>('');
   const [betInputs, setBetInputs] = useState<Record<string, string>>({}); 
   const [message, setMessage] = useState<{type: 'success' | 'error', text: string} | null>(null);
@@ -124,10 +124,20 @@ export const Casino: React.FC = () => {
 
   if (games.length === 0) {
     return (
-      <div className="flex flex-col items-center justify-center min-h-[60vh] text-slate-400 animate-pulse">
-        <Sparkles className="w-12 h-12 mb-4 text-yellow-500 opacity-50" />
-        <h2 className="text-2xl font-bold mb-2">Loading Casino...</h2>
-        <p>Please wait while we fetch the latest games.</p>
+      <div className="flex flex-col md:flex-row gap-6 animate-pulse">
+        <div className="w-full md:w-1/4 space-y-4">
+          <div className="h-[600px] bg-slate-800/40 rounded-xl border border-white/5 relative overflow-hidden">
+            <div className="absolute inset-0 -translate-x-full animate-[shimmer_2s_infinite] bg-gradient-to-r from-transparent via-white/5 to-transparent"></div>
+          </div>
+        </div>
+        <div className="w-full md:w-3/4 space-y-6">
+          <div className="h-[200px] bg-slate-800/40 rounded-xl border border-white/5 relative overflow-hidden">
+            <div className="absolute inset-0 -translate-x-full animate-[shimmer_2s_infinite] bg-gradient-to-r from-transparent via-white/5 to-transparent"></div>
+          </div>
+          <div className="h-[400px] bg-slate-800/40 rounded-xl border border-white/5 relative overflow-hidden">
+            <div className="absolute inset-0 -translate-x-full animate-[shimmer_2s_infinite] bg-gradient-to-r from-transparent via-white/5 to-transparent"></div>
+          </div>
+        </div>
       </div>
     );
   }

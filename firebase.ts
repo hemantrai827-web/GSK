@@ -1,10 +1,6 @@
 
 import { initializeApp } from "firebase/app";
-import { 
-  initializeFirestore, 
-  memoryLocalCache,
-  getFirestore
-} from "firebase/firestore";
+import { getFirestore } from "firebase/firestore";
 import { getAnalytics, isSupported } from "firebase/analytics";
 import { getStorage } from "firebase/storage";
 
@@ -31,22 +27,7 @@ isSupported().then((supported) => {
 });
 
 // Robust Firestore Initialization
-export let db: any;
-
-try {
-  // Use initializeFirestore with experimentalForceLongPolling to bypass WebSocket issues
-  db = initializeFirestore(app, {
-    experimentalForceLongPolling: true,
-    localCache: memoryLocalCache()
-  });
-} catch (err: any) {
-  console.warn("Firestore Init Error, falling back:", err);
-  try {
-     db = getFirestore(app);
-  } catch (e) {
-     console.error("Critical Firestore Error:", e);
-  }
-}
+export const db = getFirestore(app);
 
 // Initialize Storage
 export const storage = getStorage(app);

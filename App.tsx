@@ -4,7 +4,6 @@ import { AppProvider, useApp } from './context/AppContext';
 import { Navbar } from './components/Navbar';
 import { Home } from './pages/Home';
 import { Casino } from './pages/Casino';
-import { MiniGames } from './pages/MiniGames';
 import { Wallet } from './pages/Wallet';
 import { AdminPanel } from './pages/Admin';
 import { AgentSubscription } from './components/AgentSubscription';
@@ -433,8 +432,6 @@ const MainContent: React.FC = () => {
       } else {
         switch (activeTab) {
           case 'casino': content = <Casino />; break;
-          case 'games': content = <MiniGames />; break;
-          case 'slots': content = <MiniGames initialView="SLOTS" />; break;
           case 'wallet': content = <Wallet />; break;
           case 'admin': content = <AdminPanel />; break;
           case 'agent': content = <AgentPanel />; break;

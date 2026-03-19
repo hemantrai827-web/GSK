@@ -68,7 +68,7 @@ export interface Bet {
   id: string;
   userId: string;
   gameId: string;
-  gameType: 'BAZAAR' | 'MATKA' | 'MINI_GAME' | 'SLOT';
+  gameType: 'BAZAAR' | 'MATKA';
   selection: string;
   amount: number;
   status: 'PENDING' | 'WON' | 'LOST' | 'COMPLETED' | 'active' | 'win' | 'lose';
@@ -108,15 +108,6 @@ export interface Transaction {
   bankDetailsSnapshot?: BankDetails;
 }
 
-export interface MiniGame {
-  id: string;
-  name: string;
-  entryFee: number;
-  poolSize: number;
-  players: 2 | 4;
-  image: string;
-}
-
 export interface ResultLog {
   id: string;
   gameId: string;
@@ -127,40 +118,4 @@ export interface ResultLog {
   createdAt: any;
   roundId?: string;
   expiresAt?: number; // For 24h retention policy
-}
-
-// --- SLOT SYSTEM TYPES ---
-
-export interface SlotSymbol {
-  id: string;
-  char: string; // Emoji or Character to render
-  value: number; // Multiplier for 3-of-a-kind
-  weight: number; // 1 (Rare) to 100 (Common) - For RNG
-  isWild?: boolean;
-}
-
-export interface SlotGameConfig {
-  id: string;
-  name: string;
-  description: string;
-  theme: {
-    background: string; // Tailwind class or hex
-    border: string;
-    accent: string;
-    reelBg: string;
-  };
-  symbols: SlotSymbol[];
-  reels: 3; // Fixed to 3 for mobile stability
-  rows: 3; // Fixed to 3
-  minBet: number;
-  maxBet: number;
-  paylines: number[][][]; // Array of coordinate arrays [[r,c], [r,c], [r,c]]
-}
-
-export interface SlotSpinResult {
-  grid: string[][]; // 3x3 grid of Symbol IDs
-  winLines: number[]; // Indices of paylines that won
-  totalWin: number;
-  isWin: boolean;
-  isBigWin: boolean;
 }
