@@ -9,6 +9,7 @@ import { AdminPanel } from './pages/Admin';
 import { AgentSubscription } from './components/AgentSubscription';
 import { AgentPanel } from './pages/AgentPanel';
 import { LiveActivityFeed } from './components/LiveActivityFeed';
+import { AdBanner } from './components/AdBanner';
 import { collection, query, where, getDocs, updateDoc, doc, getDoc } from 'firebase/firestore';
 import { db } from './firebase';
 import { User, Lock, Mail, ChevronRight, UserPlus, ArrowLeft, Check, KeyRound, Phone, CheckCircle, XCircle, X, AlertTriangle } from 'lucide-react';
@@ -89,39 +90,6 @@ const MainContent: React.FC = () => {
             setIsRegistering(true); // Switch to register mode automatically
             setActiveTab('auth'); // Ensure user is on auth tab
         }
-        
-        // 3. Fix Gwalior Prime Result
-        const fixGwaliorPrime = async () => {
-            try {
-                const q = query(collection(db, 'games'));
-                const snap = await getDocs(q);
-                snap.forEach(async (docSnap) => {
-                    const data = docSnap.data();
-                    const name = (data.name || '').toLowerCase();
-                    if (name.includes('gwalior') && data.hour_slot === 22) {
-                        if (data.result_number === '51' || data.result_number === 51) {
-                            await updateDoc(doc(db, 'games', docSnap.id), { result_number: '52' });
-                        }
-                        
-                        const dates = ['2026-03-11', '2026-03-12', '2026-03-13'];
-                        for (const date of dates) {
-                            const historyId = `${docSnap.id}_${date}`;
-                            const hRef = doc(db, 'gameHistory', historyId);
-                            const hSnap = await getDoc(hRef);
-                            if (hSnap.exists()) {
-                                const hData = hSnap.data();
-                                if (hData.result === '51' || hData.result === 51) {
-                                    await updateDoc(hRef, { result: '52' });
-                                }
-                            }
-                        }
-                    }
-                });
-            } catch (e) {
-                console.error("Fix error:", e);
-            }
-        };
-        fixGwaliorPrime();
     };
 
     initAuth();
@@ -456,11 +424,16 @@ const MainContent: React.FC = () => {
   };
 
   return (
-    <div className="min-h-screen bg-[radial-gradient(ellipse_at_top,_var(--tw-gradient-stops))] from-slate-900 via-[#0f172a] to-black text-slate-200 flex flex-col relative overflow-x-hidden">
+    <div className="min-h-screen bg-[radial-gradient(ellipse_at_top,_var(--tw-gradient-stops))] from-slate-900 via-[#0f172a] to-black text-slate-200 flex flex-col relative overflow-x-hidden pb-[60px]">
       <Navbar activeTab={activeTab} setActiveTab={setActiveTab} />
       
+      {/* Top Banner Ad */}
+      <div className="w-full flex justify-center mt-2.5 z-10 relative">
+        <AdBanner />
+      </div>
+
       {connectionStatus === 'ERROR' && (
-        <div className="bg-red-900/80 border-b border-red-500 text-white px-4 py-2 text-center text-sm font-medium flex items-center justify-center gap-2 animate-pulse z-50 relative">
+        <div className="bg-red-900/80 border-b border-red-500 text-white px-4 py-2 text-center text-sm font-medium flex items-center justify-center gap-2 animate-pulse z-50 relative mt-2">
           <AlertTriangle className="w-4 h-4" />
           Database connection error or quota exceeded. Please try again later.
         </div>
@@ -495,6 +468,11 @@ const MainContent: React.FC = () => {
          <p className="mb-2 font-medium">Gwalior Satta King &copy; 2024. All Rights Reserved.</p>
          <p className="text-xs opacity-70">18+ Only. Gambling involves risk. Please play responsibly.</p>
       </footer>
+
+      {/* Bottom Sticky Banner Ad */}
+      <div className="fixed bottom-0 left-0 w-full bg-black z-[9999] flex justify-center items-center shadow-[0_-4px_10px_rgba(0,0,0,0.5)]">
+        <AdBanner />
+      </div>
     </div>
   );
 };

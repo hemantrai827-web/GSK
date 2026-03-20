@@ -123,6 +123,9 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
 
       try {
         rawResults.forEach(r => {
+            // Filter out results for games that are not in activeGames
+            if (!activeGames.some(g => g.id === r.gameId)) return;
+
             const pubTime = typeof r.publishTime === 'number' ? r.publishTime : now;
             
             if (pubTime > now) {
@@ -134,7 +137,7 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
         setScheduledResults(newScheduled);
         setHistoryResults(newHistory);
       } catch(e) { console.error("Result processing error", e); }
-  }, [rawResults, clockTick]);
+  }, [rawResults, clockTick, activeGames]);
 
   useEffect(() => {
     let unsubUser = () => {};
@@ -226,6 +229,16 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
                     ...data,
                     result_number: validResult
                 };
+            }).filter(game => {
+                // Filter out duplicate 9AM game
+                if (game.id === 'ovhV3xhgmLNtDVtlV0eR') {
+                    return false;
+                }
+                // Filter out 8 PM games that are not Kilagate Surprise
+                if (Number(game.hour_slot) === 20) {
+                    return game.name === 'Kilagate Surprise';
+                }
+                return true;
             });
             const sortedList = list.sort((a, b) => Number(a.hour_slot || 0) - Number(b.hour_slot || 0));
             setGames(sortedList);

@@ -10,24 +10,49 @@ import { generateHistoryIfEmpty } from '../utils/historyGenerator';
 import { formatHourSlot } from '../utils/helpers';
 import { motion } from 'motion/react';
 
-const NativeAd = () => {
-  const adRef = useRef<HTMLDivElement>(null);
+const NativeAdCard = ({ index }: { index: number }) => {
+  const iframeHtml = `
+    <!DOCTYPE html>
+    <html>
+      <head>
+        <meta name="viewport" content="width=device-width, initial-scale=1.0">
+        <style>
+          body { margin: 0; padding: 0; display: flex; justify-content: center; align-items: center; background: transparent; overflow: hidden; height: 100vh; width: 100vw; }
+          #container-adfeb59b318e83204773b8469ddf3d31 { max-width: 100%; max-height: 100%; display: flex; justify-content: center; align-items: center; width: 100%; height: 100%; }
+        </style>
+      </head>
+      <body>
+        <script async="async" data-cfasync="false" src="https://pl28937033.profitablecpmratenetwork.com/adfeb59b318e83204773b8469ddf3d31/invoke.js"></script>
+        <div id="container-adfeb59b318e83204773b8469ddf3d31"></div>
+      </body>
+    </html>
+  `;
 
-  useEffect(() => {
-    if (adRef.current && !adRef.current.hasChildNodes()) {
-      const script = document.createElement('script');
-      script.async = true;
-      script.setAttribute('data-cfasync', 'false');
-      script.src = 'https://pl28937033.effectivegatecpm.com/adfeb59b318e83204773b8469ddf3d31/invoke.js';
-      adRef.current.appendChild(script);
-      
-      const container = document.createElement('div');
-      container.id = 'container-adfeb59b318e83204773b8469ddf3d31';
-      adRef.current.appendChild(container);
-    }
-  }, []);
-
-  return <div ref={adRef} className="w-full flex justify-center items-center min-h-[90px]"></div>;
+  return (
+    <motion.article 
+      initial={{ opacity: 0, y: 15 }}
+      animate={{ opacity: 1, y: 0 }}
+      transition={{ duration: 0.3, delay: index * 0.05, ease: "easeOut" }}
+      className="native-ad-card w-full sm:w-[calc(50%-0.5rem)] lg:w-[calc(33.333%-0.666rem)] relative group overflow-hidden rounded-[12px] border border-white/5 bg-gradient-to-b from-slate-900 to-black backdrop-blur-sm transition-all duration-300 ease-out hover:scale-[1.02] hover:shadow-[0_8px_30px_rgba(0,0,0,0.5)] hover:border-white/10 z-10 flex flex-col min-h-[260px]"
+    >
+      <div className="p-4 md:p-5 relative z-20 flex flex-col h-full">
+        <div className="flex justify-between items-start mb-3">
+          <span className="text-[10px] uppercase tracking-widest text-slate-500 font-medium">Sponsored</span>
+        </div>
+        <div className="flex-grow flex items-center justify-center w-full h-full overflow-hidden rounded-lg">
+          <iframe
+            title="Sponsored Ad"
+            srcDoc={iframeHtml}
+            width="100%"
+            height="100%"
+            frameBorder="0"
+            scrolling="no"
+            className="w-full h-full min-h-[200px]"
+          ></iframe>
+        </div>
+      </div>
+    </motion.article>
+  );
 };
 
 export const Home: React.FC<{ navigateTo: (tab: string) => void }> = ({ navigateTo }) => {
@@ -56,7 +81,15 @@ export const Home: React.FC<{ navigateTo: (tab: string) => void }> = ({ navigate
         const historyData = snapshot.docs.map(doc => ({
           id: doc.id,
           ...doc.data()
-        }));
+        })).filter((doc: any) => {
+          // Filter out night games
+          if (Number(doc.hour_slot) >= 22 || Number(doc.hour_slot) <= 4) return false;
+          // Filter out duplicate 9AM game
+          if (doc.gameId === 'ovhV3xhgmLNtDVtlV0eR') return false;
+          // Filter out 8 PM games that are not Kilagate Surprise
+          if (Number(doc.hour_slot) === 20 && doc.gameName !== 'Kilagate Surprise') return false;
+          return true;
+        });
         setGameHistory(historyData);
       }).catch((error) => {
         console.error("Error fetching game history:", error);
@@ -298,12 +331,6 @@ export const Home: React.FC<{ navigateTo: (tab: string) => void }> = ({ navigate
          </motion.section>
       )}
 
-      {/* Top Ad Banner */}
-      <div className="w-full max-w-4xl mx-auto bg-slate-900/50 border border-white/5 rounded-xl p-4 text-center text-slate-500 my-6 backdrop-blur-sm shadow-lg">
-        <span className="text-[10px] uppercase tracking-widest opacity-50 mb-2 block">Advertisement</span>
-        <NativeAd />
-      </div>
-
       {activeGames.length === 0 ? (
         <div className="flex flex-wrap justify-center gap-4">
           {[1, 2, 3, 4, 5, 6].map((i) => (
@@ -325,90 +352,81 @@ export const Home: React.FC<{ navigateTo: (tab: string) => void }> = ({ navigate
                     else if (currentHour > game.hour_slot) gameStatus = 'RESULT';
 
                     return (
-                    <motion.article 
-                      initial={{ opacity: 0, y: 15 }}
-                      animate={{ opacity: 1, y: 0 }}
-                      transition={{ duration: 0.4, delay: idx * 0.05 }}
-                      key={game.id} 
-                      className="w-full sm:w-[calc(50%-0.5rem)] lg:w-[calc(33.333%-0.666rem)] relative group overflow-hidden rounded-xl border border-white/5 bg-gradient-to-b from-slate-900 to-black backdrop-blur-sm transition-all duration-300 ease-out hover:scale-[1.02] hover:border-yellow-500/30 hover:shadow-[0_8px_30px_rgba(234,179,8,0.1)] z-10 flex flex-col"
-                    >
-                      <div className="p-4 md:p-5 relative z-20 flex flex-col h-full">
-                        <div className="flex justify-between items-start mb-3">
-                          <div>
-                            <h3 className="text-lg md:text-xl font-bold mb-0.5 tracking-tight flex items-center gap-1.5 text-white drop-shadow-sm">
-                              {game.name}
-                              <Sparkles className="w-3.5 h-3.5 text-yellow-500 opacity-80" />
-                            </h3>
-                            <div className="flex items-center gap-1.5 text-xs font-medium text-slate-400">
-                              <Clock className="w-3 h-3" />
-                              <span>{formatHourSlot(game.hour_slot)}</span>
+                      <React.Fragment key={game.id}>
+                        <motion.article 
+                          initial={{ opacity: 0, y: 15 }}
+                          animate={{ opacity: 1, y: 0 }}
+                          transition={{ duration: 0.4, delay: idx * 0.05 }}
+                          className="w-full sm:w-[calc(50%-0.5rem)] lg:w-[calc(33.333%-0.666rem)] relative group overflow-hidden rounded-xl border border-white/5 bg-gradient-to-b from-slate-900 to-black backdrop-blur-sm transition-all duration-300 ease-out hover:scale-[1.02] hover:border-yellow-500/30 hover:shadow-[0_8px_30px_rgba(234,179,8,0.1)] z-10 flex flex-col"
+                        >
+                          <div className="p-4 md:p-5 relative z-20 flex flex-col h-full">
+                            <div className="flex justify-between items-start mb-3">
+                              <div>
+                                <h3 className="text-lg md:text-xl font-bold mb-0.5 tracking-tight flex items-center gap-1.5 text-white drop-shadow-sm">
+                                  {game.name}
+                                  <Sparkles className="w-3.5 h-3.5 text-yellow-500 opacity-80" />
+                                </h3>
+                                <div className="flex items-center gap-1.5 text-xs font-medium text-slate-400">
+                                  <Clock className="w-3 h-3" />
+                                  <span>{formatHourSlot(game.hour_slot)}</span>
+                                </div>
+                              </div>
+                              <div className={`px-2 py-0.5 rounded text-[9px] font-bold uppercase tracking-wider border ${
+                                gameStatus === 'RUNNING' ? 'bg-green-500/10 text-green-400 border-green-500/20 animate-pulse' : 
+                                gameStatus === 'RESULT' ? 'bg-blue-500/10 text-blue-400 border-blue-500/20' : 
+                                'bg-yellow-500/10 text-yellow-400 border-yellow-500/20'
+                              }`}>
+                                {gameStatus}
+                              </div>
+                            </div>
+                            
+                            <div className="flex items-center justify-center py-4 my-2 rounded-lg border border-white/5 bg-black/40 shadow-inner transition-colors group-hover:bg-black/60 group-hover:border-yellow-500/20 relative overflow-hidden">
+                              <div className="absolute inset-0 bg-gradient-to-b from-yellow-500/5 to-transparent opacity-0 group-hover:opacity-100 transition-opacity duration-300"></div>
+                              {getTodayResult(game.id) !== '----' ? (
+                                <span className="text-4xl font-mono font-bold tracking-widest text-yellow-400 drop-shadow-[0_0_10px_rgba(234,179,8,0.2)] group-hover:scale-105 transition-transform duration-300">
+                                  {getTodayResult(game.id)}
+                                </span>
+                              ) : (
+                                <span className="text-2xl font-mono font-bold animate-pulse tracking-widest text-slate-500 group-hover:text-slate-400 transition-colors duration-300">
+                                  WAITING
+                                </span>
+                              )}
+                            </div>
+
+                            <div className="flex justify-between items-center mt-3 bg-slate-800/30 rounded-md p-2 border border-white/5">
+                               <div className="flex flex-col items-center flex-1 border-r border-white/10">
+                                  <span className="text-[9px] text-slate-500 uppercase tracking-wider mb-0.5 font-semibold">Yesterday</span>
+                                  <span className="font-mono font-bold text-sm text-slate-300">{getYesterdayResult(game.id)}</span>
+                               </div>
+                               <div className="flex flex-col items-center flex-1">
+                                  <span className="text-[9px] text-slate-500 uppercase tracking-wider mb-0.5 font-semibold">Today</span>
+                                  <span className={`font-mono font-bold text-sm ${getTodayResult(game.id) !== '----' ? 'text-yellow-400' : 'text-slate-500'}`}>
+                                      {getTodayResult(game.id)}
+                                  </span>
+                               </div>
+                            </div>
+                            
+                            <div className="mt-auto pt-4 flex justify-center">
+                               <button onClick={() => navigateTo('casino')} className="flex items-center justify-center gap-2 text-black font-bold text-sm py-2 px-6 rounded-full shadow-md transform transition-all duration-300 border border-yellow-400/50 bg-gradient-to-r from-yellow-500 to-yellow-600 hover:scale-110 hover:shadow-[0_0_15px_rgba(234,179,8,0.4)] hover:border-yellow-300">
+                                 <Play className="w-4 h-4 fill-black" />
+                                 Play Now
+                               </button>
                             </div>
                           </div>
-                          <div className={`px-2 py-0.5 rounded text-[9px] font-bold uppercase tracking-wider border ${
-                            gameStatus === 'RUNNING' ? 'bg-green-500/10 text-green-400 border-green-500/20 animate-pulse' : 
-                            gameStatus === 'RESULT' ? 'bg-blue-500/10 text-blue-400 border-blue-500/20' : 
-                            'bg-yellow-500/10 text-yellow-400 border-yellow-500/20'
-                          }`}>
-                            {gameStatus}
-                          </div>
-                        </div>
-                        
-                        <div className="flex items-center justify-center py-4 my-2 rounded-lg border border-white/5 bg-black/40 shadow-inner transition-colors group-hover:bg-black/60 group-hover:border-yellow-500/20 relative overflow-hidden">
-                          <div className="absolute inset-0 bg-gradient-to-b from-yellow-500/5 to-transparent opacity-0 group-hover:opacity-100 transition-opacity duration-300"></div>
-                          {getTodayResult(game.id) !== '----' ? (
-                            <span className="text-4xl font-mono font-bold tracking-widest text-yellow-400 drop-shadow-[0_0_10px_rgba(234,179,8,0.2)] group-hover:scale-105 transition-transform duration-300">
-                              {getTodayResult(game.id)}
-                            </span>
-                          ) : (
-                            <span className="text-2xl font-mono font-bold animate-pulse tracking-widest text-slate-500 group-hover:text-slate-400 transition-colors duration-300">
-                              WAITING
-                            </span>
-                          )}
-                        </div>
+                          <div className="absolute inset-0 bg-gradient-to-tr from-yellow-500/5 to-transparent pointer-events-none opacity-0 group-hover:opacity-100 transition-opacity duration-500" />
+                        </motion.article>
 
-                        <div className="flex justify-between items-center mt-3 bg-slate-800/30 rounded-md p-2 border border-white/5">
-                           <div className="flex flex-col items-center flex-1 border-r border-white/10">
-                              <span className="text-[9px] text-slate-500 uppercase tracking-wider mb-0.5 font-semibold">Yesterday</span>
-                              <span className="font-mono font-bold text-sm text-slate-300">{getYesterdayResult(game.id)}</span>
-                           </div>
-                           <div className="flex flex-col items-center flex-1">
-                              <span className="text-[9px] text-slate-500 uppercase tracking-wider mb-0.5 font-semibold">Today</span>
-                              <span className={`font-mono font-bold text-sm ${getTodayResult(game.id) !== '----' ? 'text-yellow-400' : 'text-slate-500'}`}>
-                                  {getTodayResult(game.id)}
-                              </span>
-                           </div>
-                        </div>
-                        
-                        <div className="mt-auto pt-4 flex justify-center">
-                           <button onClick={() => navigateTo('casino')} className="flex items-center justify-center gap-2 text-black font-bold text-sm py-2 px-6 rounded-full shadow-md transform transition-all duration-300 border border-yellow-400/50 bg-gradient-to-r from-yellow-500 to-yellow-600 hover:scale-110 hover:shadow-[0_0_15px_rgba(234,179,8,0.4)] hover:border-yellow-300">
-                             <Play className="w-4 h-4 fill-black" />
-                             Play Now
-                           </button>
-                        </div>
-                      </div>
-                      <div className="absolute inset-0 bg-gradient-to-tr from-yellow-500/5 to-transparent pointer-events-none opacity-0 group-hover:opacity-100 transition-opacity duration-500" />
-                    </motion.article>
-                  )})}
+                        {/* Insert Native Ad after every 3rd card in the chunk */}
+                        {(idx + 1) % 3 === 0 && (
+                          <NativeAdCard index={idx + 1} />
+                        )}
+                      </React.Fragment>
+                    );
+                  })}
                 </section>
-                
-                {/* Middle Ad Banner after every 6 cards */}
-                {(chunkIndex + 1) * 6 <= activeGames.length && (
-                  <div className="w-full max-w-4xl mx-auto bg-slate-900/50 border border-white/5 rounded-xl p-4 text-center text-slate-500 my-8 backdrop-blur-sm shadow-lg">
-                    <span className="text-[10px] uppercase tracking-widest opacity-50 mb-2 block">Advertisement</span>
-                    <NativeAd />
-                  </div>
-                )}
               </React.Fragment>
             );
           })}
-        </div>
-      )}
-
-      {/* Middle Ad Banner (Fallback if less than 6 games) */}
-      {activeGames.length > 0 && activeGames.length < 6 && (
-        <div className="w-full max-w-4xl mx-auto bg-slate-900/50 border border-white/5 rounded-xl p-4 text-center text-slate-500 my-8 backdrop-blur-sm shadow-lg">
-          <span className="text-[10px] uppercase tracking-widest opacity-50 mb-2 block">Advertisement</span>
-          <NativeAd />
         </div>
       )}
 
@@ -492,12 +510,6 @@ export const Home: React.FC<{ navigateTo: (tab: string) => void }> = ({ navigate
               </div>
           </div>
       </motion.section>
-
-      {/* Bottom Ad Banner */}
-      <div className="w-full max-w-4xl mx-auto bg-slate-900/50 border border-white/5 rounded-xl p-4 text-center text-slate-500 my-8 backdrop-blur-sm shadow-lg">
-        <span className="text-[10px] uppercase tracking-widest opacity-50 mb-2 block">Advertisement</span>
-        <NativeAd />
-      </div>
 
       <motion.section 
         initial={{ opacity: 0 }}

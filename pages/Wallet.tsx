@@ -1,7 +1,8 @@
 
-import React, { useState, useRef, useMemo, useEffect } from 'react';
+import React, { useState, useRef, useEffect } from 'react';
 import { useApp } from '../context/AppContext';
 import { Button } from '../components/ui/Button';
+import { UpiCard } from '../components/UpiCard';
 import { Wallet as WalletIcon, ArrowDownCircle, ArrowUpCircle, History, Gift, QrCode, FileText, Copy, Briefcase, Star, Lock, Loader2, CheckCircle, Dices, XCircle, ChevronRight, UploadCloud } from 'lucide-react';
 
 const QuickAmounts = ({ onSelect }: { onSelect: (val: string) => void }) => (
@@ -50,14 +51,6 @@ export const Wallet: React.FC = () => {
       // Clear sensitive fields when tab changes
       setAmount(''); setUtr(''); setScreenshot(null);
   }, [user, activeTab]);
-
-  const dynamicQrSource = useMemo(() => {
-      const val = parseFloat(amount);
-      const isValid = !isNaN(val) && val > 0;
-      let uri = `upi://pay?pa=${PAYMENT_ADDRESS}&pn=${MERCHANT_NAME}&cu=INR`;
-      if (isValid) uri += `&am=${val}`;
-      return `https://api.qrserver.com/v1/create-qr-code/?size=300x300&bgcolor=ffffff&data=${encodeURIComponent(uri)}`;
-  }, [amount]);
 
   const handleCopy = (text: string) => {
       navigator.clipboard.writeText(text);
@@ -212,26 +205,18 @@ export const Wallet: React.FC = () => {
           
           {/* DEPOSIT TAB */}
           {activeTab === 'deposit' && (
-            <div className="max-w-2xl mx-auto animate-zoom-in">
+            <div className="max-w-4xl mx-auto animate-zoom-in">
               <h2 className="text-2xl font-bold text-white mb-6 flex items-center gap-2 border-b border-white/10 pb-4">
                   <QrCode className="text-yellow-400 w-6 h-6" /> Add Funds
               </h2>
-              
-              <div className="grid md:grid-cols-2 gap-8">
+                    <div className="grid md:grid-cols-2 gap-8">
                  {/* Left: Payment Gateway Simulator */}
-                 <div className="space-y-6">
-                     <div className="bg-white p-4 rounded-xl shadow-xl flex flex-col items-center">
-                        <img src={dynamicQrSource} alt="Scan to Pay" className="w-48 h-48 object-contain mix-blend-multiply" />
-                        <div className="mt-4 w-full">
-                            <p className="text-xs text-center text-slate-500 mb-1 font-bold uppercase">Or Pay to UPI ID</p>
-                            <div className="flex gap-2 bg-slate-100 p-2 rounded-lg border border-slate-300">
-                                <span className="flex-1 text-slate-900 font-mono text-sm truncate">{PAYMENT_ADDRESS}</span>
-                                <button onClick={() => handleCopy(PAYMENT_ADDRESS)} className="text-blue-600 hover:text-blue-800 font-bold text-xs">COPY</button>
-                            </div>
-                        </div>
-                     </div>
+                 <div className="space-y-4 max-h-[600px] overflow-y-auto custom-scrollbar pr-2">
+                     <UpiCard label="UPI 1" upiId={PAYMENT_ADDRESS} amount={amount} showId={true} onCopy={handleCopy} />
+                     <UpiCard label="UPI 2" upiId="9755878032@ibl" amount={amount} showId={true} onCopy={handleCopy} />
+                     <UpiCard label="UPI 3" upiId="7772080059@ybl" amount={amount} showId={false} onCopy={handleCopy} />
 
-                     <div className="w-full space-y-3 mt-2 mb-4">
+                     <div className="w-full space-y-3 mt-4 mb-4">
                         <p className="text-sm text-slate-300 mb-2 text-center">Or tap a button below to pay via UPI app</p>
                         <button onClick={handlePaymentClick} className="w-full flex items-center justify-center gap-2 bg-white text-black font-bold py-3 rounded-xl hover:bg-gray-100 transition-colors">
                             <img src="https://upload.wikimedia.org/wikipedia/commons/thumb/f/f2/Google_Pay_Logo.svg/512px-Google_Pay_Logo.svg.png" alt="GPay" className="h-5 object-contain" />

@@ -7,6 +7,15 @@ export const generateHistoryIfEmpty = async (games: any[]) => {
   if (!games || games.length === 0) return;
   if (isGenerating) return;
 
+  // Filter out games between 10 PM and 4 AM, duplicate 9AM game, and non-Kilagate 8PM games
+  const validGames = games.filter(g => {
+    if (Number(g.hour_slot) >= 22 || Number(g.hour_slot) <= 4) return false;
+    if (g.id === 'ovhV3xhgmLNtDVtlV0eR') return false;
+    if (Number(g.hour_slot) === 20 && g.name !== 'Kilagate Surprise') return false;
+    return true;
+  });
+  if (validGames.length === 0) return;
+
   try {
     isGenerating = true;
     const historyRef = collection(db, 'gameHistory');
@@ -20,7 +29,7 @@ export const generateHistoryIfEmpty = async (games: any[]) => {
       return;
     }
 
-    console.log('Generating 90 days of history for', games.length, 'games...');
+    console.log('Generating 90 days of history for', validGames.length, 'games...');
     
     const today = new Date();
     let batch = writeBatch(db);
@@ -32,7 +41,7 @@ export const generateHistoryIfEmpty = async (games: any[]) => {
       d.setDate(d.getDate() - i);
       const dateStr = d.toISOString().split('T')[0]; // YYYY-MM-DD
 
-      for (const game of games) {
+      for (const game of validGames) {
         const randomNum = Math.floor(Math.random() * 100).toString().padStart(2, '0');
         
         const docRef = doc(historyRef);
