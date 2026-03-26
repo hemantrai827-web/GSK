@@ -256,7 +256,7 @@ export const AdminPanel: React.FC = () => {
               createdAt: serverTimestamp()
           }, { merge: true });
 
-          await processGameWinnings(game.id, newValue);
+          await processGameWinnings(game.id, newValue, historyId);
 
           showNotification("Result Saved!", 'success');
           setGameInputs(prev => ({ ...prev, [game.id]: '' }));

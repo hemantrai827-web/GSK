@@ -339,7 +339,6 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
     try {
         const betsRef = collection(db, 'bets');
         let q = query(betsRef, where('gameId', '==', gameId), where('status', '==', 'active'));
-        if (roundId) q = query(q, where('roundId', '==', roundId));
 
         const snapshot = await getDocs(q);
         

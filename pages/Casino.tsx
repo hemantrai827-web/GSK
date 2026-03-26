@@ -110,7 +110,12 @@ export const Casino: React.FC = () => {
             amount: parseInt(val)
         }));
 
-    const roundId = undefined;
+    const today = new Date();
+    const year = today.getFullYear();
+    const month = String(today.getMonth() + 1).padStart(2, '0');
+    const day = String(today.getDate()).padStart(2, '0');
+    const dateStr = `${year}-${month}-${day}`;
+    const roundId = `${selectedGameId}_${dateStr}`;
 
     const success = await placeBulkBets(selectedGameId, selectedGame.type, betsList, roundId);
     if (success) {

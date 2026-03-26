@@ -374,8 +374,18 @@ export const Wallet: React.FC = () => {
                         (activeTab === 'deposit_history' ? myDeposits : activeTab === 'withdraw_history' ? myWithdrawals : activeTab === 'referral_history' ? myReferrals : myBets).map((item: any, idx) => (
                         <tr key={item.id} className="hover:bg-slate-800/50 transition-colors animate-fade-in" style={{ animationDelay: `${idx * 50}ms` }}>
                             <td className="p-3 text-slate-400 whitespace-nowrap">{new Date(item.timestamp).toLocaleDateString()}</td>
-                            <td className="p-3 text-slate-300 text-xs max-w-[150px] truncate">{item.description || item.gameId}</td>
-                            <td className="p-3 text-right font-bold text-white">₹{item.amount}</td>
+                            <td className="p-3 text-slate-300 text-xs max-w-[150px] truncate">
+                                {item.description || item.gameId}
+                                {activeTab === 'bet_history' && item.selection && (
+                                    <span className="block text-yellow-500 mt-1">Num: {item.selection}</span>
+                                )}
+                            </td>
+                            <td className="p-3 text-right font-bold text-white">
+                                ₹{item.amount}
+                                {activeTab === 'bet_history' && item.status === 'win' && item.winAmount && (
+                                    <span className="block text-green-400 text-xs mt-1">+₹{item.winAmount}</span>
+                                )}
+                            </td>
                             <td className="p-3 text-right">{getStatusBadge(item.status)}</td>
                         </tr>
                         ))

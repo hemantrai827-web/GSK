@@ -4,6 +4,7 @@ import { AppProvider, useApp } from './context/AppContext';
 import { Navbar } from './components/Navbar';
 import { Home } from './pages/Home';
 import { Casino } from './pages/Casino';
+import { Mines } from './pages/Mines';
 import { Wallet } from './pages/Wallet';
 import { AdminPanel } from './pages/Admin';
 import { AgentSubscription } from './components/AgentSubscription';
@@ -400,6 +401,7 @@ const MainContent: React.FC = () => {
       } else {
         switch (activeTab) {
           case 'casino': content = <Casino />; break;
+          case 'mines': content = <Mines />; break;
           case 'wallet': content = <Wallet />; break;
           case 'admin': content = <AdminPanel />; break;
           case 'agent': content = <AgentPanel />; break;
