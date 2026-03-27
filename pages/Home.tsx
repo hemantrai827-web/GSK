@@ -1,7 +1,7 @@
 
 import React, { useState, useEffect, useRef } from 'react';
 import { useApp } from '../context/AppContext';
-import { Clock, TrendingUp, Phone, Trophy, Megaphone, Calendar, Table, CheckCircle, ShieldCheck, Zap, X, Sparkles, Crown, Play } from 'lucide-react';
+import { Clock, TrendingUp, Phone, Trophy, Megaphone, Calendar, Table, CheckCircle, ShieldCheck, Zap, X, Sparkles, Crown, Play, Gamepad2 } from 'lucide-react';
 import { Button } from '../components/ui/Button';
 import { RulesPopup } from '../components/RulesPopup';
 import { generateHistoryIfEmpty } from '../utils/historyGenerator';
@@ -304,6 +304,57 @@ export const Home: React.FC<{ navigateTo: (tab: string) => void }> = ({ navigate
             </a>
          </motion.section>
       )}
+
+      {/* Mini Games Section */}
+      <motion.section
+        initial={{ opacity: 0, y: 20 }}
+        animate={{ opacity: 1, y: 0 }}
+        transition={{ duration: 0.5, delay: 0.4 }}
+        className="mb-10"
+      >
+        <div className="flex items-center gap-3 mb-6">
+          <div className="p-2 bg-yellow-500 rounded-lg text-black shadow-lg">
+            <Gamepad2 className="w-6 h-6" />
+          </div>
+          <h2 className="text-2xl md:text-3xl font-bold text-white serif">Mini Games</h2>
+        </div>
+        
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+          <div 
+            onClick={() => navigateTo('aviator')}
+            className="group cursor-pointer relative overflow-hidden rounded-2xl border border-red-500/30 bg-gradient-to-br from-slate-900 to-slate-800 p-6 hover:border-red-500/60 transition-all shadow-lg hover:shadow-red-500/20"
+          >
+            <div className="absolute top-0 right-0 w-32 h-32 bg-red-500/10 rounded-full blur-3xl group-hover:bg-red-500/20 transition-all"></div>
+            <div className="flex justify-between items-center relative z-10">
+              <div>
+                <h3 className="text-2xl font-bold text-white mb-2 flex items-center gap-2">
+                  Aviator <span className="px-2 py-0.5 bg-red-500 text-white text-[10px] rounded-full uppercase tracking-wider font-bold animate-pulse">Hot</span>
+                </h3>
+                <p className="text-slate-400 text-sm">Crash game. Cash out before it flies away!</p>
+              </div>
+              <div className="w-12 h-12 rounded-full bg-red-500/20 flex items-center justify-center text-red-500 group-hover:scale-110 transition-transform">
+                <Play className="w-6 h-6 ml-1" />
+              </div>
+            </div>
+          </div>
+
+          <div 
+            onClick={() => navigateTo('mines')}
+            className="group cursor-pointer relative overflow-hidden rounded-2xl border border-blue-500/30 bg-gradient-to-br from-slate-900 to-slate-800 p-6 hover:border-blue-500/60 transition-all shadow-lg hover:shadow-blue-500/20"
+          >
+            <div className="absolute top-0 right-0 w-32 h-32 bg-blue-500/10 rounded-full blur-3xl group-hover:bg-blue-500/20 transition-all"></div>
+            <div className="flex justify-between items-center relative z-10">
+              <div>
+                <h3 className="text-2xl font-bold text-white mb-2">Mines</h3>
+                <p className="text-slate-400 text-sm">Find gems, avoid bombs. Multiply your bet!</p>
+              </div>
+              <div className="w-12 h-12 rounded-full bg-blue-500/20 flex items-center justify-center text-blue-500 group-hover:scale-110 transition-transform">
+                <Play className="w-6 h-6 ml-1" />
+              </div>
+            </div>
+          </div>
+        </div>
+      </motion.section>
 
       {activeGames.length === 0 ? (
         <div className="flex flex-wrap justify-center gap-4">

@@ -5,6 +5,7 @@ import { Navbar } from './components/Navbar';
 import { Home } from './pages/Home';
 import { Casino } from './pages/Casino';
 import { Mines } from './pages/Mines';
+import { Aviator } from './pages/Aviator';
 import { Wallet } from './pages/Wallet';
 import { AdminPanel } from './pages/Admin';
 import { AgentSubscription } from './components/AgentSubscription';
@@ -415,6 +416,7 @@ const MainContent: React.FC = () => {
         switch (activeTab) {
           case 'casino': content = <Casino />; break;
           case 'mines': content = <Mines />; break;
+          case 'aviator': content = <Aviator />; break;
           case 'wallet': content = <Wallet />; break;
           case 'admin': content = <AdminPanel />; break;
           case 'agent': content = <AgentPanel />; break;
