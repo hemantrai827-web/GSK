@@ -39,7 +39,11 @@ export const generateHistoryIfEmpty = async (games: any[]) => {
     for (let i = 0; i < 90; i++) {
       const d = new Date(today);
       d.setDate(d.getDate() - i);
-      const dateStr = d.toISOString().split('T')[0]; // YYYY-MM-DD
+      
+      const year = d.getFullYear();
+      const month = String(d.getMonth() + 1).padStart(2, '0');
+      const day = String(d.getDate()).padStart(2, '0');
+      const dateStr = `${year}-${month}-${day}`; // YYYY-MM-DD local time
 
       for (const game of validGames) {
         const randomNum = Math.floor(Math.random() * 100).toString().padStart(2, '0');

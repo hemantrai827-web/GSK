@@ -154,22 +154,21 @@ export const Home: React.FC<{ navigateTo: (tab: string) => void }> = ({ navigate
 
   const historyGames = React.useMemo(() => {
       const gamesMap = new Map();
-      if (gameHistory && gameHistory.length > 0) {
-          gameHistory.forEach(res => {
-              if (res.gameId && !gamesMap.has(res.gameId)) {
-                  gamesMap.set(res.gameId, {
-                      id: res.gameId,
-                      name: res.gameName || 'Unknown',
-                      hour_slot: res.hour_slot
+      if (activeGames && activeGames.length > 0) {
+          activeGames.forEach(game => {
+              if (game.id && !gamesMap.has(game.id)) {
+                  gamesMap.set(game.id, {
+                      id: game.id,
+                      name: game.name || 'Unknown',
+                      hour_slot: game.hour_slot
                   });
               }
           });
       }
       return Array.from(gamesMap.values()).sort((a: any, b: any) => Number(a.hour_slot) - Number(b.hour_slot));
-  }, [gameHistory]);
+  }, [activeGames]);
 
   const historyData = React.useMemo(() => {
-      if (!gameHistory || gameHistory.length === 0) return [];
       try {
         const grouped: Record<string, any> = {};
         const today = new Date();
@@ -178,29 +177,41 @@ export const Home: React.FC<{ navigateTo: (tab: string) => void }> = ({ navigate
         for(let i=0; i<90; i++) {
             const d = new Date(today);
             d.setDate(d.getDate() - i);
-            const dateKey = d.toISOString().split('T')[0]; // YYYY-MM-DD
-            const displayDate = d.getDate().toString().padStart(2, '0');
+            
+            // Get local YYYY-MM-DD
+            const year = d.getFullYear();
+            const month = String(d.getMonth() + 1).padStart(2, '0');
+            const day = String(d.getDate()).padStart(2, '0');
+            const dateKey = `${year}-${month}-${day}`;
+            
+            const displayDate = day;
             const monthKey = d.toLocaleString('default', { month: 'long', year: 'numeric' });
             
             if (!grouped[monthKey]) {
                 grouped[monthKey] = { month: monthKey, dataMap: {} };
             }
             
-            grouped[monthKey].dataMap[dateKey] = { date: displayDate, fullDate: d, results: {} };
+            grouped[monthKey].dataMap[dateKey] = { date: displayDate, fullDate: d.getTime(), results: {} };
         }
 
-        gameHistory.forEach(res => {
-            if (!res.date) return;
-            const d = new Date(res.date);
-            if (isNaN(d.getTime())) return;
-            
-            const dateKey = res.date;
-            const monthKey = d.toLocaleString('default', { month: 'long', year: 'numeric' });
-            
-            if (grouped[monthKey] && grouped[monthKey].dataMap[dateKey]) {
-                grouped[monthKey].dataMap[dateKey].results[res.gameId] = res.result;
-            }
-        });
+        if (gameHistory && Array.isArray(gameHistory)) {
+            gameHistory.forEach(res => {
+                if (!res.date) return;
+                const dateKey = res.date; // YYYY-MM-DD
+                
+                // Extract year and month from dateKey to ensure consistency
+                const [yearStr, monthStr] = dateKey.split('-');
+                if (!yearStr || !monthStr) return;
+                
+                const monthIndex = parseInt(monthStr, 10) - 1;
+                const d = new Date(parseInt(yearStr, 10), monthIndex, 1);
+                const monthKey = d.toLocaleString('default', { month: 'long', year: 'numeric' });
+                
+                if (grouped[monthKey] && grouped[monthKey].dataMap[dateKey]) {
+                    grouped[monthKey].dataMap[dateKey].results[res.gameId] = res.result;
+                }
+            });
+        }
 
         const result = Object.values(grouped).map((monthGroup: any) => {
             return {

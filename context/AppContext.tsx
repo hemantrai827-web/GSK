@@ -248,7 +248,14 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
         fetchGames();
 
         const fetchGameHistory = () => {
-            const q = query(collection(db, 'gameHistory'), orderBy('date', 'desc'), limit(50));
+            const ninetyDaysAgo = new Date();
+            ninetyDaysAgo.setDate(ninetyDaysAgo.getDate() - 90);
+            const year = ninetyDaysAgo.getFullYear();
+            const month = String(ninetyDaysAgo.getMonth() + 1).padStart(2, '0');
+            const day = String(ninetyDaysAgo.getDate()).padStart(2, '0');
+            const dateStr = `${year}-${month}-${day}`;
+            
+            const q = query(collection(db, 'gameHistory'), where('date', '>=', dateStr));
             getDocs(q).then((snapshot) => {
                 const historyData = snapshot.docs.map(doc => ({
                     id: doc.id,
@@ -378,12 +385,25 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
 
         const snapshot = await getDocs(q);
         
-        // Save game result to game_history
-        const historyRef = doc(collection(db, 'game_history'));
+        // Save game result to gameHistory
+        const game = games.find(g => g.id === gameId);
+        const gameName = game ? game.name : gameId;
+        const hour_slot = game ? game.hour_slot : null;
+        
+        const today = new Date();
+        const year = today.getFullYear();
+        const month = String(today.getMonth() + 1).padStart(2, '0');
+        const day = String(today.getDate()).padStart(2, '0');
+        const dateStr = `${year}-${month}-${day}`;
+
+        const historyRef = doc(collection(db, 'gameHistory'));
         await setDoc(historyRef, {
-            game_name: gameId,
-            result_number: result,
-            result_date: Date.now()
+            gameId: gameId,
+            gameName: gameName,
+            date: dateStr,
+            hour_slot: hour_slot,
+            result: result,
+            createdAt: serverTimestamp()
         });
 
         if (snapshot.empty) return;
