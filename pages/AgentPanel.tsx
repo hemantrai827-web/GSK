@@ -133,6 +133,15 @@ export const AgentPanel: React.FC = () => {
     }
   };
 
+  if (!user || user.role !== 'AGENT') {
+      return (
+          <div className="flex flex-col items-center justify-center h-[60vh] text-center px-4 animate-fade-in">
+              <h2 className="text-3xl font-bold text-white mb-2 tracking-tight">Access Denied</h2>
+              <p className="text-slate-400 max-w-md">You do not have permission to view the agent panel.</p>
+          </div>
+      );
+  }
+
   if (expired) {
     return <AgentSubscription />;
   }

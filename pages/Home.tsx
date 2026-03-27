@@ -4,8 +4,6 @@ import { useApp } from '../context/AppContext';
 import { Clock, TrendingUp, Phone, Trophy, Megaphone, Calendar, Table, CheckCircle, ShieldCheck, Zap, X, Sparkles, Crown, Play } from 'lucide-react';
 import { Button } from '../components/ui/Button';
 import { RulesPopup } from '../components/RulesPopup';
-import { collection, query, orderBy, limit } from 'firebase/firestore';
-import { db } from '../firebase';
 import { generateHistoryIfEmpty } from '../utils/historyGenerator';
 import { formatHourSlot } from '../utils/helpers';
 import { motion } from 'motion/react';
@@ -56,10 +54,9 @@ const NativeAdCard = ({ index }: { index: number }) => {
 };
 
 export const Home: React.FC<{ navigateTo: (tab: string) => void }> = ({ navigateTo }) => {
-  const { bannerConfig, games, activeGames } = useApp();
+  const { bannerConfig, games, activeGames, gameHistory } = useApp();
   const [currentTime, setCurrentTime] = useState(new Date());
   const [activeMonthIdx, setActiveMonthIdx] = useState(0);
-  const [gameHistory, setGameHistory] = useState<any[]>([]);
 
   useEffect(() => {
     const timer = setInterval(() => {
@@ -73,29 +70,6 @@ export const Home: React.FC<{ navigateTo: (tab: string) => void }> = ({ navigate
       generateHistoryIfEmpty(games);
     }
   }, [games]);
-
-  useEffect(() => {
-    const q = query(collection(db, 'gameHistory'), orderBy('date', 'desc'), limit(3000));
-    import('firebase/firestore').then(({ getDocs }) => {
-      getDocs(q).then((snapshot) => {
-        const historyData = snapshot.docs.map(doc => ({
-          id: doc.id,
-          ...doc.data()
-        })).filter((doc: any) => {
-          // Filter out night games
-          if (Number(doc.hour_slot) >= 22 || Number(doc.hour_slot) <= 4) return false;
-          // Filter out duplicate 9AM game
-          if (doc.gameId === 'ovhV3xhgmLNtDVtlV0eR') return false;
-          // Filter out 8 PM games that are not Kilagate Surprise
-          if (Number(doc.hour_slot) === 20 && doc.gameName !== 'Kilagate Surprise') return false;
-          return true;
-        });
-        setGameHistory(historyData);
-      }).catch((error) => {
-        console.error("Error fetching game history:", error);
-      });
-    });
-  }, []);
 
   const currentHour = currentTime.getHours();
   const currentMinute = currentTime.getMinutes();

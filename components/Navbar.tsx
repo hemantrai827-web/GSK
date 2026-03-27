@@ -20,7 +20,7 @@ export const Navbar: React.FC<NavbarProps> = ({ activeTab, setActiveTab }) => {
     { id: 'wallet', label: 'Wallet', icon: Wallet },
   ];
 
-  if (user?.role === 'ADMIN') {
+  if (user?.role === 'ADMIN' || user?.role === 'SUB_AGENT') {
     navItems.push({ id: 'admin', label: 'Control Panel', icon: UserCircle });
   } else if (user?.role === 'AGENT') {
     navItems = [

@@ -28,6 +28,7 @@ const MainContent: React.FC = () => {
   const [error, setError] = useState('');
   const [isRegistering, setIsRegistering] = useState(false);
   const [rememberMe, setRememberMe] = useState(false);
+  const [isSubmitting, setIsSubmitting] = useState(false);
   
   // Auto clear notification
   useEffect(() => {
@@ -65,7 +66,7 @@ const MainContent: React.FC = () => {
                 // Trigger actual login to restore session
                 const result = await login('USER', e, p);
                 if (result.success) {
-                    if (result.role === 'ADMIN') {
+                    if (result.role === 'ADMIN' || result.role === 'SUB_AGENT') {
                         setActiveTab('admin');
                     } else if (result.role === 'AGENT') {
                         setActiveTab('agent');
@@ -98,10 +99,13 @@ const MainContent: React.FC = () => {
 
   const handleLogin = async (e: React.FormEvent) => {
     e.preventDefault();
+    if (isSubmitting) return;
     setError('');
+    setIsSubmitting(true);
 
     if (!email || !password) {
       setError('Please enter both email and password.');
+      setIsSubmitting(false);
       return;
     }
 
@@ -115,7 +119,7 @@ const MainContent: React.FC = () => {
     const result = await login('USER', email.trim(), password.trim());
     
     if (result.success) {
-        if (result.role === 'ADMIN') {
+        if (result.role === 'ADMIN' || result.role === 'SUB_AGENT') {
             setActiveTab('admin');
         } else if (result.role === 'AGENT') {
             setActiveTab('agent');
@@ -125,34 +129,42 @@ const MainContent: React.FC = () => {
     } else {
         setError(result.message || 'Login failed.');
     }
+    setIsSubmitting(false);
   };
 
   const handleRegister = async (e: React.FormEvent) => {
     e.preventDefault();
+    if (isSubmitting) return;
     setError('');
+    setIsSubmitting(true);
 
     if (!email || !mobile || !password || !confirmPassword) {
       setError('All fields are required.');
+      setIsSubmitting(false);
       return;
     }
 
     if (mobile.length !== 10 || isNaN(Number(mobile))) {
         setError('Please enter a valid 10-digit mobile number.');
+        setIsSubmitting(false);
         return;
     }
 
     if (password !== confirmPassword) {
       setError('Passwords do not match.');
+      setIsSubmitting(false);
       return;
     }
 
     if (password.length < 6) {
       setError('Password must be at least 6 characters.');
+      setIsSubmitting(false);
       return;
     }
     
     if (email === 'raihemant003@gmail.com') {
         setError('This email is reserved.');
+        setIsSubmitting(false);
         return;
     }
 
@@ -163,6 +175,7 @@ const MainContent: React.FC = () => {
     } else {
         setError(result.message || 'Registration failed.');
     }
+    setIsSubmitting(false);
   };
 
   const toggleMode = () => {
@@ -302,7 +315,7 @@ const MainContent: React.FC = () => {
                         value={email}
                         onChange={(e) => setEmail(e.target.value)}
                         className="block w-full pl-10 pr-3 py-3 border border-slate-700 rounded-lg leading-5 bg-slate-900/50 text-slate-100 placeholder-slate-500 focus:outline-none focus:ring-2 focus:ring-yellow-500/50 focus:border-yellow-500 transition-all duration-200 sm:text-sm"
-                        placeholder="Email or Mobile"
+                        placeholder="Email, Mobile, or Staff ID"
                         autoComplete="username"
                       />
                     </div>

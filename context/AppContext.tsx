@@ -20,7 +20,7 @@ interface Notification {
 interface AppContextType {
   user: User | null;
   allUsers: User[]; 
-  register: (email: string, mobile: string, password: string, referralCode?: string) => void;
+  register: (email: string, mobile: string, password: string, referralCode?: string) => Promise<{ success: boolean; message?: string }>;
   createStaffAccount: (username: string, email: string, mobile: string, password: string, role: 'AGENT' | 'SUB_AGENT') => boolean;
   login: (role: UserRole, identifier: string, password?: string) => Promise<{ success: boolean; message?: string; role?: UserRole }>;
   logout: () => void;
@@ -68,6 +68,7 @@ interface AppContextType {
   toggleSimulatedActivity: (enabled: boolean) => void;
   cancelPendingResult: (gameId: string) => void;
   renewAccess: (uid: string) => Promise<boolean>;
+  gameHistory: any[];
 }
 
 const AppContext = createContext<AppContextType | undefined>(undefined);
@@ -100,6 +101,8 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
   const [games, setGames] = useState<any[]>([]);
   const [activeGames, setActiveGames] = useState<any[]>([]);
   const [clockTick, setClockTick] = useState(Date.now());
+
+  const [gameHistory, setGameHistory] = useState<any[]>([]);
 
   const showNotification = (message: string, type: 'success' | 'error' | 'info') => {
       setNotification({ id: Date.now().toString(), message, type });
@@ -210,45 +213,60 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
         fetchSettings();
         settingsInterval = setInterval(fetchSettings, 60000);
 
-        unsubGames = onSnapshot(collection(db, 'games'), (snap) => {
-            const now = Date.now();
-            const list = snap.docs.map(doc => {
-                const data = doc.data() as any;
-                let validResult = data.result_number;
-                
-                if (data.result_time && validResult) {
-                    const rTime = data.result_time.toDate ? data.result_time.toDate().getTime() : new Date(data.result_time).getTime();
-                    // Reset if older than 20 hours (72000000 ms)
-                    if (now - rTime > 72000000) {
-                        validResult = "";
+        const fetchGames = () => {
+            getDocs(collection(db, 'games')).then((snap) => {
+                const now = Date.now();
+                const list = snap.docs.map(doc => {
+                    const data = doc.data() as any;
+                    let validResult = data.result_number;
+                    
+                    if (data.result_time && validResult) {
+                        const rTime = data.result_time.toDate ? data.result_time.toDate().getTime() : new Date(data.result_time).getTime();
+                        if (now - rTime > 72000000) {
+                            validResult = "";
+                        }
                     }
-                }
 
-                return {
-                    id: doc.id,
-                    ...data,
-                    result_number: validResult
-                };
-            }).filter(game => {
-                // Filter out duplicate 9AM game
-                if (game.id === 'ovhV3xhgmLNtDVtlV0eR') {
-                    return false;
-                }
-                // Filter out 8 PM games that are not Kilagate Surprise
-                if (Number(game.hour_slot) === 20) {
-                    return game.name === 'Kilagate Surprise';
-                }
-                return true;
+                    return {
+                        id: doc.id,
+                        ...data,
+                        result_number: validResult
+                    };
+                }).filter(game => {
+                    if (game.id === 'ovhV3xhgmLNtDVtlV0eR') return false;
+                    if (Number(game.hour_slot) === 20) return game.name === 'Kilagate Surprise';
+                    return true;
+                });
+                const sortedList = list.sort((a, b) => Number(a.hour_slot || 0) - Number(b.hour_slot || 0));
+                setGames(sortedList);
+                setActiveGames(sortedList.filter(game => !(Number(game.hour_slot) >= 22 || Number(game.hour_slot) <= 4)));
+            }).catch((err) => {
+                console.error("Games Sync Error:", err);
+                setConnectionStatus('ERROR');
             });
-            const sortedList = list.sort((a, b) => Number(a.hour_slot || 0) - Number(b.hour_slot || 0));
-            setGames(sortedList);
-            setActiveGames(sortedList.filter(game => !(Number(game.hour_slot) >= 22 || Number(game.hour_slot) <= 4)));
-        }, (err) => {
-            console.error("Games Sync Error:", err);
-            setConnectionStatus('ERROR');
-        });
+        };
+        fetchGames();
 
-        unsubResults = onSnapshot(query(collection(db, 'results'), orderBy('publishTime', 'desc'), limit(300)), (snap) => {
+        const fetchGameHistory = () => {
+            const q = query(collection(db, 'gameHistory'), orderBy('date', 'desc'), limit(50));
+            getDocs(q).then((snapshot) => {
+                const historyData = snapshot.docs.map(doc => ({
+                    id: doc.id,
+                    ...doc.data()
+                })).filter((doc: any) => {
+                    if (Number(doc.hour_slot) >= 22 || Number(doc.hour_slot) <= 4) return false;
+                    if (doc.gameId === 'ovhV3xhgmLNtDVtlV0eR') return false;
+                    if (Number(doc.hour_slot) === 20 && doc.gameName !== 'Kilagate Surprise') return false;
+                    return true;
+                });
+                setGameHistory(historyData);
+            }).catch((error) => {
+                console.error("Error fetching game history:", error);
+            });
+        };
+        fetchGameHistory();
+
+        unsubResults = onSnapshot(query(collection(db, 'results'), orderBy('publishTime', 'desc'), limit(50)), (snap) => {
             const results = snap.docs.map(d => {
                 const data = sanitize(d.data());
                 return {
@@ -258,6 +276,24 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
                 } as ResultLog;
             });
             setRawResults(results);
+            
+            // Update games with latest results
+            setGames(prevGames => {
+                let updated = false;
+                const newGames = prevGames.map(game => {
+                    const latestResult = results.find(r => r.gameId === game.id);
+                    if (latestResult && latestResult.result && game.result_number !== latestResult.result) {
+                        updated = true;
+                        return { ...game, result_number: latestResult.result };
+                    }
+                    return game;
+                });
+                if (updated) {
+                    setActiveGames(newGames.filter(game => !(Number(game.hour_slot) >= 22 || Number(game.hour_slot) <= 4)));
+                    return newGames;
+                }
+                return prevGames;
+            });
         }, (err) => console.error("Results Sync Error:", err));
     } catch (e) {
         console.error("Firestore subscription setup failed", e);
@@ -400,7 +436,9 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
         const qMobile = query(collection(db, 'users'), where('mobile', '==', mobile));
         const [snapE, snapM] = await Promise.all([getDocs(qEmail), getDocs(qMobile)]);
         
-        if (!snapE.empty || !snapM.empty) { alert("User already exists!"); return; }
+        if (!snapE.empty || !snapM.empty) { 
+            return { success: false, message: "User already exists with this email or mobile number!" }; 
+        }
 
         let referrerId = '';
         if (referralCode) {
@@ -430,7 +468,11 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
         }
 
         setUser(newUser);
-      } catch(e) { console.error("Reg error", e); alert("Registration failed"); }
+        return { success: true };
+      } catch(e: any) { 
+          console.error("Reg error", e); 
+          return { success: false, message: e.message || "Registration failed due to a network error." }; 
+      }
   };
 
   const createStaffAccount = (username: string, email: string, mobile: string, password: string, role: 'AGENT' | 'SUB_AGENT') => {
@@ -497,6 +539,26 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
           if (snap.empty) {
               q = query(collection(db, 'users'), where('mobile', '==', cleanId));
               snap = await getDocs(q);
+          }
+
+          if (snap.empty) {
+              q = query(collection(db, 'users'), where('username', '==', cleanId));
+              snap = await getDocs(q);
+          }
+
+          if (snap.empty) {
+              // Check if cleanId matches document ID (Staff ID)
+              const docRef = doc(db, 'users', cleanId);
+              const docSnap = await getDoc(docRef);
+              if (docSnap.exists()) {
+                  const rawData = docSnap.data();
+                  if (rawData.password !== cleanPass) {
+                      return { success: false, message: 'Incorrect Password' };
+                  }
+                  const foundUser = { id: docSnap.id, ...sanitize(rawData) } as User;
+                  setUser(foundUser);
+                  return { success: true, role: foundUser.role };
+              }
           }
 
           if (snap.empty) return { success: false, message: 'Account not found.' };
@@ -1178,7 +1240,7 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
       qrCodeUrl, updateQrCode, deposit, approveDeposit, rejectDeposit, withdraw, approveWithdraw, rejectWithdraw, uploadProof, placeBet, placeBulkBets, isBetting, processGameWinnings,
       deleteResult, maintainResultHistory,
       addTransaction, processTransaction, referUser, bannerConfig, updateBanner, deleteBanner, pendingResults, connectionStatus,
-      notification, showNotification, clearNotification, simulatedActivityEnabled, toggleSimulatedActivity, cancelPendingResult, renewAccess
+      notification, showNotification, clearNotification, simulatedActivityEnabled, toggleSimulatedActivity, cancelPendingResult, renewAccess, gameHistory
     }}>
       {children}
     </AppContext.Provider>

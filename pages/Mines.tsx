@@ -255,7 +255,7 @@ export const Mines: React.FC = () => {
             <Wallet className="w-5 h-5 text-yellow-500" />
             <div>
               <p className="text-xs text-slate-400">Balance</p>
-              <p className="font-bold text-white">₹{walletBalance.toFixed(2)}</p>
+              <p className="font-bold text-white">₹{(walletBalance || 0).toFixed(2)}</p>
             </div>
           </div>
         </div>

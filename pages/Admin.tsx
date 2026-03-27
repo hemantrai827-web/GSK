@@ -796,7 +796,7 @@ export const AdminPanel: React.FC = () => {
                                  </div>
                                  <div className="text-right">
                                      <div className="text-xs text-slate-500">Balance</div>
-                                     <div className="font-mono text-green-400">₹{staff.wallet_balance.toFixed(2)}</div>
+                                     <div className="font-mono text-green-400">₹{(staff.wallet_balance || 0).toFixed(2)}</div>
                                  </div>
                              </div>
                          ))}
