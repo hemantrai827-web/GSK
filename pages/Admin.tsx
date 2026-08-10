@@ -9,9 +9,18 @@ import { db } from '../firebase';
 import { sanitize, formatHourSlot } from '../utils/helpers';
 
 export const AdminPanel: React.FC = () => {
-  const { user, activeGames: games, transactions, depositRequests, withdrawRequests, bets, processTransaction, approveDeposit, rejectDeposit, approveWithdraw, rejectWithdraw, createStaffAccount, adminAddFunds, showNotification, findUserByIdentifier, renewAccess, qrCodeUrl, processGameWinnings, allUsers } = useApp();
+  const { 
+    user, activeGames: games, transactions, depositRequests, withdrawRequests, bets, 
+    processTransaction, approveDeposit, rejectDeposit, approveWithdraw, rejectWithdraw, 
+    createStaffAccount, adminAddFunds, showNotification, findUserByIdentifier, renewAccess, 
+    qrCodeUrl, processGameWinnings, allUsers, referrals, fraudAlerts, auditLogs,
+    adminUnlockBonus, adminLockBonus, adminCancelBonus, adminBlockReferral, adminBanUser, adminResolveFraudAlert
+  } = useApp();
   
-  const [activeTab, setActiveTab] = useState<'dashboard' | 'results' | 'funds' | 'users' | 'requests' | 'staff' | 'live_bets' | 'agent_chats'>('results');
+  const [activeTab, setActiveTab] = useState<'dashboard' | 'results' | 'funds' | 'users' | 'requests' | 'staff' | 'live_bets' | 'agent_chats' | 'referrals' | 'fraud' | 'audit_logs'>('results');
+  const [referralSearch, setReferralSearch] = useState('');
+  const [referralStatusFilter, setReferralStatusFilter] = useState<'ALL' | 'UNLOCKED' | 'LOCKED' | 'CANCELLED'>('ALL');
+  const [selectedUserModal, setSelectedUserModal] = useState<User | null>(null);
   const [gameInputs, setGameInputs] = useState<Record<string, string>>({});
   const [adminChats, setAdminChats] = useState<any[]>([]);
   const [agentPayments, setAgentPayments] = useState<any[]>([]);
@@ -435,6 +444,26 @@ export const AdminPanel: React.FC = () => {
                 {canViewStats && <Button variant={activeTab === 'live_bets' ? 'gold' : 'secondary'} size="sm" onClick={() => setActiveTab('live_bets')}><LayoutGrid className="w-4 h-4 mr-1"/> Live Bets</Button>}
                 {canViewUsers && <Button variant={activeTab === 'users' ? 'gold' : 'secondary'} size="sm" onClick={() => setActiveTab('users')}><Users className="w-4 h-4 mr-1"/> Users</Button>}
                 {canViewStaff && <Button variant={activeTab === 'staff' ? 'gold' : 'secondary'} size="sm" onClick={() => setActiveTab('staff')}><Briefcase className="w-4 h-4 mr-1"/> Staff</Button>}
+                {isAdmin && (
+                  <Button variant={activeTab === 'referrals' ? 'gold' : 'secondary'} size="sm" onClick={() => setActiveTab('referrals')}>
+                    <Crown className="w-4 h-4 mr-1"/> Referrals & Bonuses
+                  </Button>
+                )}
+                {isAdmin && (
+                  <Button variant={activeTab === 'fraud' ? 'gold' : 'secondary'} size="sm" onClick={() => setActiveTab('fraud')}>
+                    <AlertTriangle className="w-4 h-4 mr-1"/> Fraud Alerts
+                    {fraudAlerts.filter(f => f.status === 'ACTIVE').length > 0 && (
+                      <span className="ml-1 bg-red-600 text-white text-[10px] px-1.5 py-0.5 rounded-full animate-pulse">
+                        {fraudAlerts.filter(f => f.status === 'ACTIVE').length}
+                      </span>
+                    )}
+                  </Button>
+                )}
+                {isAdmin && (
+                  <Button variant={activeTab === 'audit_logs' ? 'gold' : 'secondary'} size="sm" onClick={() => setActiveTab('audit_logs')}>
+                    <FileText className="w-4 h-4 mr-1"/> Audit Logs
+                  </Button>
+                )}
                 {isAdmin && <Button variant={activeTab === 'agent_chats' ? 'gold' : 'secondary'} size="sm" onClick={() => setActiveTab('agent_chats')}><Send className="w-4 h-4 mr-1"/> Agent Chats</Button>}
                 {isAdmin && <Button variant={activeTab === 'agent_payments' ? 'gold' : 'secondary'} size="sm" onClick={() => setActiveTab('agent_payments')}><Wallet className="w-4 h-4 mr-1"/> Agent Payments</Button>}
             </div>
@@ -887,6 +916,321 @@ export const AdminPanel: React.FC = () => {
                  </div>
              </div>
          )}
+          {activeTab === 'referrals' && isAdmin && (
+            <div className="space-y-6">
+              <div className="flex flex-col md:flex-row justify-between items-center gap-4 bg-slate-900/60 p-4 rounded-xl border border-yellow-500/20">
+                <div className="relative flex-1 w-full">
+                  <Search className="w-4 h-4 text-slate-400 absolute left-3 top-3" />
+                  <input
+                    type="text"
+                    placeholder="Search Referrals by Referrer, Referee name/mobile, code..."
+                    value={referralSearch}
+                    onChange={e => setReferralSearch(e.target.value)}
+                    className="w-full bg-slate-950 text-white pl-9 pr-4 py-2 rounded-lg border border-slate-700 outline-none focus:border-yellow-500 text-sm"
+                  />
+                </div>
+                <div className="flex items-center gap-2 w-full md:w-auto">
+                  {(['ALL', 'UNLOCKED', 'LOCKED', 'CANCELLED'] as const).map((st) => (
+                    <button
+                      key={st}
+                      onClick={() => setReferralStatusFilter(st)}
+                      className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-all ${
+                        referralStatusFilter === st
+                          ? 'bg-yellow-500 text-black shadow-md'
+                          : 'bg-slate-950 text-slate-400 hover:text-white border border-slate-800'
+                      }`}
+                    >
+                      {st}
+                    </button>
+                  ))}
+                </div>
+              </div>
+
+              <div className="glass-panel p-6 rounded-xl border border-yellow-500/30">
+                <h3 className="text-xl font-bold text-white mb-6 flex items-center gap-2">
+                  <Crown className="w-5 h-5 text-yellow-400" /> Referral & Bonus Management
+                </h3>
+                <div className="overflow-x-auto">
+                  <table className="w-full text-left text-sm">
+                    <thead className="bg-slate-800 text-slate-400">
+                      <tr>
+                        <th className="p-4 rounded-l-lg">Referrer & Code</th>
+                        <th className="p-4">Referred User</th>
+                        <th className="p-4">Signup Time</th>
+                        <th className="p-4">Deposit Progress</th>
+                        <th className="p-4">Bonus Status</th>
+                        <th className="p-4 rounded-r-lg text-right">Actions</th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-slate-800">
+                      {referrals.length === 0 ? (
+                        <tr>
+                          <td colSpan={6} className="p-8 text-center text-slate-500">
+                            No referral records found.
+                          </td>
+                        </tr>
+                      ) : (
+                        referrals
+                          .filter(r => {
+                            const matchesStatus = referralStatusFilter === 'ALL' ? true : r.status === referralStatusFilter;
+                            const searchLower = referralSearch.toLowerCase();
+                            const matchesSearch = !searchLower ||
+                              r.referrerName?.toLowerCase().includes(searchLower) ||
+                              r.referredUserName?.toLowerCase().includes(searchLower) ||
+                              r.referredUserMobile?.includes(searchLower) ||
+                              r.referralCode?.toLowerCase().includes(searchLower);
+                            return matchesStatus && matchesSearch;
+                          })
+                          .map(ref => {
+                            const refereeUser = allUsers.find(u => u.id === ref.referredUserId);
+                            const referrerUser = allUsers.find(u => u.id === ref.referrerId);
+
+                            return (
+                              <tr key={ref.id} className="hover:bg-slate-800/30">
+                                <td className="p-4 font-bold text-white">
+                                  {ref.referrerName}
+                                  <span className="block text-xs text-yellow-400 font-mono">
+                                    Code: {ref.referralCode || referrerUser?.referralCode || 'N/A'}
+                                  </span>
+                                  <span className="block text-[10px] text-slate-500 font-normal">
+                                    ID: {ref.referrerId}
+                                  </span>
+                                </td>
+                                <td className="p-4 font-bold text-slate-200">
+                                  {ref.referredUserName}
+                                  <span className="block text-xs text-slate-400 font-normal">
+                                    {ref.referredUserMobile || 'No mobile'}
+                                  </span>
+                                </td>
+                                <td className="p-4 text-xs text-slate-400 font-mono">
+                                  {ref.signupDate || (ref as any).createdAt ? new Date(ref.signupDate || (ref as any).createdAt).toLocaleString('en-IN') : 'N/A'}
+                                </td>
+                                <td className="p-4 font-mono text-xs">
+                                  <div className="flex items-center gap-2">
+                                    <span className="font-bold text-yellow-400">₹{ref.depositProgress || ref.depositAmount || 0} / ₹{ref.requiredDeposit || 100}</span>
+                                    {(ref.depositProgress || ref.depositAmount || 0) >= (ref.requiredDeposit || 100) && (
+                                      <CheckCircle className="w-4 h-4 text-emerald-400" />
+                                    )}
+                                  </div>
+                                  {ref.depositCompletionDate && (
+                                    <span className="text-[10px] text-emerald-400 block font-mono">
+                                      Done: {new Date(ref.depositCompletionDate).toLocaleDateString('en-IN')}
+                                    </span>
+                                  )}
+                                </td>
+                                <td className="p-4">
+                                  <span className={`px-2.5 py-1 rounded text-xs font-bold ${
+                                    ref.status === 'UNLOCKED' ? 'bg-emerald-500/20 text-emerald-400 border border-emerald-500/30' :
+                                    ref.status === 'LOCKED' ? 'bg-amber-500/20 text-amber-400 border border-amber-500/30' :
+                                    'bg-red-500/20 text-red-400 border border-red-500/30'
+                                  }`}>
+                                    {ref.status}
+                                  </span>
+                                </td>
+                                <td className="p-4 text-right">
+                                  <div className="flex justify-end gap-1.5 flex-wrap">
+                                    {ref.status === 'LOCKED' && (
+                                      <Button size="sm" variant="gold" onClick={() => adminUnlockBonus(ref.id)}>
+                                        Unlock ₹25
+                                      </Button>
+                                    )}
+                                    {ref.status === 'UNLOCKED' && (
+                                      <Button size="sm" variant="secondary" onClick={() => adminLockBonus(ref.id)}>
+                                        Lock
+                                      </Button>
+                                    )}
+                                    {ref.status !== 'CANCELLED' && (
+                                      <Button size="sm" variant="danger" onClick={() => adminCancelBonus(ref.id)}>
+                                        Cancel
+                                      </Button>
+                                    )}
+                                    {refereeUser && (
+                                      <Button size="sm" variant="outline" onClick={() => setSelectedUserModal(refereeUser)}>
+                                        User Info
+                                      </Button>
+                                    )}
+                                  </div>
+                                </td>
+                              </tr>
+                            );
+                          })
+                      )}
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+            </div>
+          )}
+
+          {activeTab === 'fraud' && isAdmin && (
+            <div className="space-y-6">
+              <div className="glass-panel p-6 rounded-xl border border-red-500/30">
+                <h3 className="text-xl font-bold text-white mb-6 flex items-center gap-2">
+                  <AlertTriangle className="w-5 h-5 text-red-500" /> Security & Fraud Alerts
+                </h3>
+                <div className="overflow-x-auto">
+                  <table className="w-full text-left text-sm">
+                    <thead className="bg-slate-800 text-slate-400">
+                      <tr>
+                        <th className="p-4 rounded-l-lg">Flagged User</th>
+                        <th className="p-4">Reason / Threat</th>
+                        <th className="p-4">Risk Level</th>
+                        <th className="p-4">Device ID</th>
+                        <th className="p-4">Date</th>
+                        <th className="p-4">Status</th>
+                        <th className="p-4 rounded-r-lg text-right">Actions</th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-slate-800">
+                      {fraudAlerts.length === 0 ? (
+                        <tr>
+                          <td colSpan={7} className="p-8 text-center text-slate-500">
+                            No fraud alerts detected. System secure.
+                          </td>
+                        </tr>
+                      ) : (
+                        fraudAlerts.map(alert => (
+                          <tr key={alert.id} className="hover:bg-slate-800/30">
+                            <td className="p-4 font-bold text-white">
+                              {alert.userName}
+                              <span className="block text-xs text-slate-400 font-normal">
+                                {alert.userMobile}
+                              </span>
+                            </td>
+                            <td className="p-4 text-xs text-slate-300 max-w-[200px]">
+                              {alert.reason}
+                            </td>
+                            <td className="p-4 font-bold">
+                              <span className={`px-2 py-0.5 rounded text-[10px] ${
+                                alert.riskLevel === 'HIGH' ? 'bg-red-500/20 text-red-400' :
+                                alert.riskLevel === 'MEDIUM' ? 'bg-amber-500/20 text-amber-400' :
+                                'bg-blue-500/20 text-blue-400'
+                              }`}>
+                                {alert.riskLevel}
+                              </span>
+                            </td>
+                            <td className="p-4 font-mono text-xs text-slate-400">
+                              {alert.deviceId}
+                            </td>
+                            <td className="p-4 text-xs text-slate-500">
+                              {new Date(alert.timestamp).toLocaleString()}
+                            </td>
+                            <td className="p-4 font-bold text-xs">
+                              <span className={
+                                alert.status === 'ACTIVE' ? 'text-red-400' :
+                                alert.status === 'BLOCKED' ? 'text-amber-400' :
+                                'text-slate-400'
+                              }>
+                                {alert.status}
+                              </span>
+                            </td>
+                            <td className="p-4 text-right space-x-2">
+                              {alert.status === 'ACTIVE' && (
+                                <>
+                                  <Button size="sm" variant="danger" onClick={() => adminResolveFraudAlert(alert.id, 'BLOCK')}>
+                                    Block & Ban User
+                                  </Button>
+                                  <Button size="sm" variant="secondary" onClick={() => adminResolveFraudAlert(alert.id, 'RESOLVE')}>
+                                    Dismiss
+                                  </Button>
+                                </>
+                              )}
+                            </td>
+                          </tr>
+                        ))
+                      )}
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+            </div>
+          )}
+
+          {activeTab === 'audit_logs' && isAdmin && (
+            <div className="space-y-6">
+              <div className="glass-panel p-6 rounded-xl border border-white/10">
+                <h3 className="text-xl font-bold text-white mb-6 flex items-center gap-2">
+                  <FileText className="w-5 h-5 text-yellow-500" /> Admin Audit Logs
+                </h3>
+                <div className="space-y-3">
+                  {auditLogs.length === 0 ? (
+                    <p className="text-center text-slate-500 py-8">No audit logs available.</p>
+                  ) : (
+                    auditLogs.map(log => (
+                      <div key={log.id} className="bg-slate-900/60 p-4 rounded-xl border border-slate-800 flex justify-between items-center text-sm">
+                        <div>
+                          <div className="font-bold text-yellow-400 flex items-center gap-2">
+                            <span>{log.action}</span>
+                            <span className="text-xs text-slate-400 font-normal">by {log.adminName}</span>
+                          </div>
+                          <p className="text-xs text-slate-300 mt-1">{log.details}</p>
+                        </div>
+                        <span className="text-xs text-slate-500 font-mono">
+                          {new Date(log.timestamp).toLocaleString()}
+                        </span>
+                      </div>
+                    ))
+                  )}
+                </div>
+              </div>
+            </div>
+          )}
+
+          {/* User Detail Modal */}
+          {selectedUserModal && (
+            <div className="fixed inset-0 bg-black/80 backdrop-blur-sm z-50 flex items-center justify-center p-4">
+              <div className="bg-slate-900 border border-yellow-500/30 rounded-2xl max-w-lg w-full p-6 space-y-6 relative shadow-2xl">
+                <button
+                  onClick={() => setSelectedUserModal(null)}
+                  className="absolute top-4 right-4 text-slate-400 hover:text-white"
+                >
+                  <XCircle className="w-6 h-6" />
+                </button>
+
+                <div className="flex items-center gap-3">
+                  <div className="w-12 h-12 rounded-full bg-yellow-500/20 flex items-center justify-center text-yellow-400 font-black text-xl">
+                    {selectedUserModal.username.charAt(0).toUpperCase()}
+                  </div>
+                  <div>
+                    <h3 className="text-xl font-bold text-white">{selectedUserModal.username}</h3>
+                    <p className="text-xs text-slate-400">Mobile: {selectedUserModal.mobile || '---'}</p>
+                  </div>
+                </div>
+
+                <div className="grid grid-cols-2 gap-3 text-xs">
+                  <div className="bg-slate-950 p-3 rounded-lg border border-slate-800">
+                    <span className="text-slate-400 block">Deposit Wallet</span>
+                    <span className="font-bold text-emerald-400 text-sm">₹{selectedUserModal.depositWallet || 0}</span>
+                  </div>
+                  <div className="bg-slate-950 p-3 rounded-lg border border-slate-800">
+                    <span className="text-slate-400 block">Bonus Wallet</span>
+                    <span className="font-bold text-yellow-400 text-sm">₹{selectedUserModal.bonusWallet || 0}</span>
+                  </div>
+                  <div className="bg-slate-950 p-3 rounded-lg border border-slate-800">
+                    <span className="text-slate-400 block">Locked Bonus</span>
+                    <span className="font-bold text-amber-400 text-sm">₹{selectedUserModal.lockedBonus || 0}</span>
+                  </div>
+                  <div className="bg-slate-950 p-3 rounded-lg border border-slate-800">
+                    <span className="text-slate-400 block">Remaining Wager</span>
+                    <span className="font-bold text-purple-400 text-sm">₹{selectedUserModal.remainingWager || 0}</span>
+                  </div>
+                </div>
+
+                <div className="space-y-2 pt-2 border-t border-slate-800">
+                  <p className="text-xs font-bold text-slate-300">Administrative Actions</p>
+                  <div className="grid grid-cols-2 gap-2">
+                    <Button size="sm" variant={selectedUserModal.isBanned ? "gold" : "danger"} onClick={() => { adminBanUser(selectedUserModal.id); setSelectedUserModal(null); }}>
+                      {selectedUserModal.isBanned ? "Unban Account" : "Ban Account"}
+                    </Button>
+                    <Button size="sm" variant="secondary" onClick={() => { adminBlockReferral(selectedUserModal.id); setSelectedUserModal(null); }}>
+                      Block Referrals
+                    </Button>
+                  </div>
+                </div>
+              </div>
+            </div>
+          )}
+
     </div>
   );
 };

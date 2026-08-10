@@ -1,6 +1,6 @@
 
 import React, { createContext, useContext, useState, useEffect, ReactNode, useRef } from 'react';
-import { User, BazaarResult, MatkaGame, Transaction, Bet, UserRole, ResultLog, BankDetails, DepositRequest } from '../types';
+import { User, BazaarResult, MatkaGame, Transaction, Bet, UserRole, ResultLog, BankDetails, DepositRequest, ReferralRecord, FraudAlert, AuditLog, UserNotification } from '../types';
 import { db, storage } from '../firebase';
 import { 
   collection, doc, setDoc, updateDoc, onSnapshot, query, where, 
@@ -10,6 +10,8 @@ import {
 import { ref, uploadBytes, getDownloadURL } from 'firebase/storage';
 import { sanitize } from '../utils/helpers';
 import { GAME_RULES } from '../config/GameRules';
+
+import { ensureMonthlyHistory } from '../utils/historyGenerator';
 
 interface Notification {
   id: string;
@@ -69,6 +71,19 @@ interface AppContextType {
   cancelPendingResult: (gameId: string) => void;
   renewAccess: (uid: string) => Promise<boolean>;
   gameHistory: any[];
+
+  // Referral, Bonus, Wager & Fraud Systems
+  referrals: ReferralRecord[];
+  fraudAlerts: FraudAlert[];
+  userNotifications: UserNotification[];
+  auditLogs: AuditLog[];
+  adminUnlockBonus: (referralId: string) => Promise<boolean>;
+  adminLockBonus: (referralId: string) => Promise<boolean>;
+  adminCancelBonus: (referralId: string) => Promise<boolean>;
+  adminBlockReferral: (userId: string) => Promise<boolean>;
+  adminBanUser: (userId: string) => Promise<boolean>;
+  adminResolveFraudAlert: (alertId: string, action: 'RESOLVE' | 'BLOCK') => Promise<boolean>;
+  markNotificationRead: (notificationId: string) => Promise<void>;
 }
 
 const AppContext = createContext<AppContextType | undefined>(undefined);
@@ -94,7 +109,7 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
   const [pendingResults, setPendingResults] = useState<Record<string, string>>({});
   
   // Config State
-  const [qrCodeUrl, setQrCodeUrl] = useState<string>('https://api.qrserver.com/v1/create-qr-code/?size=200x200&data=upi://pay?pa=gwalior@upi&pn=GwaliorSatta');
+  const [qrCodeUrl, setQrCodeUrl] = useState<string>('https://api.qrserver.com/v1/create-qr-code/?size=300x300&data=upi://pay?pa=gwaliorsattaking01@axl&pn=GwaliorSattaKing');
   const [bannerConfig, setBannerConfig] = useState<{ image: string; link: string }>({ image: '', link: '' });
   const [simulatedActivityEnabled, setSimulatedActivityEnabled] = useState(true);
 
@@ -103,6 +118,12 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
   const [clockTick, setClockTick] = useState(Date.now());
 
   const [gameHistory, setGameHistory] = useState<any[]>([]);
+
+  // System States
+  const [referrals, setReferrals] = useState<ReferralRecord[]>([]);
+  const [fraudAlerts, setFraudAlerts] = useState<FraudAlert[]>([]);
+  const [userNotifications, setUserNotifications] = useState<UserNotification[]>([]);
+  const [auditLogs, setAuditLogs] = useState<AuditLog[]>([]);
 
   const showNotification = (message: string, type: 'success' | 'error' | 'info') => {
       setNotification({ id: Date.now().toString(), message, type });
@@ -240,20 +261,19 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
                 const sortedList = list.sort((a, b) => Number(a.hour_slot || 0) - Number(b.hour_slot || 0));
                 setGames(sortedList);
                 setActiveGames(sortedList.filter(game => !(Number(game.hour_slot) >= 22 || Number(game.hour_slot) <= 4)));
+                ensureMonthlyHistory(sortedList, () => fetchGameHistory());
             }).catch((err) => {
                 console.error("Games Sync Error:", err);
                 setConnectionStatus('ERROR');
             });
         };
-        fetchGames();
 
         const fetchGameHistory = () => {
-            const ninetyDaysAgo = new Date();
-            ninetyDaysAgo.setDate(ninetyDaysAgo.getDate() - 90);
-            const year = ninetyDaysAgo.getFullYear();
-            const month = String(ninetyDaysAgo.getMonth() + 1).padStart(2, '0');
-            const day = String(ninetyDaysAgo.getDate()).padStart(2, '0');
-            const dateStr = `${year}-${month}-${day}`;
+            const today = new Date();
+            const fourMonthsAgo = new Date(today.getFullYear(), today.getMonth() - 4, 1);
+            const year = fourMonthsAgo.getFullYear();
+            const month = String(fourMonthsAgo.getMonth() + 1).padStart(2, '0');
+            const dateStr = `${year}-${month}-01`;
             
             const q = query(collection(db, 'gameHistory'), where('date', '>=', dateStr));
             getDocs(q).then((snapshot) => {
@@ -271,6 +291,7 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
                 console.error("Error fetching game history:", error);
             });
         };
+        fetchGames();
         fetchGameHistory();
 
         unsubResults = onSnapshot(query(collection(db, 'results'), orderBy('publishTime', 'desc'), limit(50)), (snap) => {
@@ -354,6 +375,36 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
             }
             setWithdrawRequests(fetchedWds);
         }).catch((err) => console.error("WithdrawRequests sync error:", err));
+
+        // Sync Referrals
+        let refQ;
+        if (user.role === 'ADMIN' || user.role === 'AGENT') {
+            refQ = query(collection(db, 'referrals'), limit(100));
+        } else {
+            refQ = query(collection(db, 'referrals'), where('referrerId', '==', user.id));
+        }
+        getDocs(refQ).then((snap) => {
+            const list = snap.docs.map(d => ({ id: d.id, ...sanitize(d.data()) } as ReferralRecord));
+            setReferrals(list);
+        }).catch(err => console.error("Referrals Sync Error", err));
+
+        // Sync Notifications
+        const notifQ = query(collection(db, 'notifications'), where('userId', '==', user.id), limit(20));
+        getDocs(notifQ).then((snap) => {
+            const list = snap.docs.map(d => ({ id: d.id, ...sanitize(d.data()) } as UserNotification));
+            setUserNotifications(list);
+        }).catch(err => console.error("Notifications Sync Error", err));
+
+        // Sync Fraud Alerts & Audit Logs for Admin
+        if (user.role === 'ADMIN') {
+            getDocs(query(collection(db, 'fraud_alerts'), limit(50))).then((snap) => {
+                setFraudAlerts(snap.docs.map(d => ({ id: d.id, ...sanitize(d.data()) } as FraudAlert)));
+            }).catch(err => console.error("Fraud Sync Error", err));
+
+            getDocs(query(collection(db, 'audit_logs'), limit(50))).then((snap) => {
+                setAuditLogs(snap.docs.map(d => ({ id: d.id, ...sanitize(d.data()) } as AuditLog)));
+            }).catch(err => console.error("Audit Logs Sync Error", err));
+        }
         
       } catch (e) { console.error("Tx sync error", e); }
   }, [user?.role, user?.id]);
@@ -427,7 +478,7 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
 
             if (isWin && winAmount > 0) {
                 batch.update(docSnap.ref, { status: 'win', winAmount });
-                batch.update(doc(db, 'users', bet.userId), { wallet_balance: increment(winAmount) });
+                batch.update(doc(db, 'users', bet.userId), { wallet_balance: increment(winAmount), depositWallet: increment(winAmount) });
                 const txRef = doc(collection(db, 'transactions'));
                 batch.set(txRef, {
                     userId: bet.userId, 
@@ -461,30 +512,144 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
         }
 
         let referrerId = '';
+        let referrerUser: User | null = null;
         if (referralCode) {
-            const qRef = query(collection(db, 'users'), where('referralCode', '==', referralCode));
+            const qRef = query(collection(db, 'users'), where('referralCode', '==', referralCode.trim().toUpperCase()));
             const snapRef = await getDocs(qRef);
             if (!snapRef.empty) {
                 referrerId = snapRef.docs[0].id;
+                referrerUser = { id: snapRef.docs[0].id, ...sanitize(snapRef.docs[0].data()) } as User;
             }
         }
 
-        const newUser: User = {
-            id: 'u' + Date.now(), username: email.split('@')[0], email, mobile, password,
-            role: 'USER', wallet_balance: 0, referralCode: Math.random().toString(36).substring(2, 8).toUpperCase(),
-            referredBy: referrerId || undefined, depositCount: 0, validReferralCount: 0
-        };
-        await setDoc(doc(db, 'users', newUser.id), newUser);
+        const deviceId = typeof window !== 'undefined' ? (localStorage.getItem('gsk_device_id') || ('dev-' + Math.random().toString(36).substring(2, 10))) : '';
+        if (typeof window !== 'undefined' && deviceId) {
+            localStorage.setItem('gsk_device_id', deviceId);
+        }
 
-        if (referrerId) {
-            const referralId = 'ref-' + Date.now();
-            await setDoc(doc(db, 'referrals', referralId), {
+        const hasReferral = Boolean(referrerId);
+        const welcomeBonus = hasReferral ? 50 : 0; // ₹50 Signup Bonus when using referral code
+
+        const newUserId = 'u' + Date.now();
+        const newUser: User = {
+            id: newUserId, 
+            username: email.split('@')[0], 
+            email, 
+            mobile, 
+            password,
+            role: 'USER', 
+            wallet_balance: welcomeBonus,
+            depositWallet: 0,
+            bonusWallet: welcomeBonus,
+            lockedBonus: 0,
+            totalWagered: 0,
+            remainingWager: welcomeBonus,
+            referralCode: Math.random().toString(36).substring(2, 8).toUpperCase(),
+            referredBy: referrerId || undefined, 
+            depositCount: 0, 
+            validReferralCount: 0,
+            deviceId: deviceId,
+            createdAt: Date.now()
+        };
+        await setDoc(doc(db, 'users', newUser.id), sanitize(newUser));
+
+        // Welcome Bonus Transaction & Notification
+        if (welcomeBonus > 0) {
+            const bonusTxId = 'tx-welcome-' + Date.now();
+            await setDoc(doc(db, 'transactions', bonusTxId), sanitize({
+                id: bonusTxId,
+                userId: newUser.id,
+                userName: newUser.username,
+                userMobile: mobile,
+                type: 'WELCOME_BONUS',
+                amount: welcomeBonus,
+                status: 'COMPLETED',
+                timestamp: Date.now(),
+                description: '₹50 Signup Play Bonus Credited'
+            }));
+
+            const welcomeNotifId = 'notif-' + Date.now();
+            await setDoc(doc(db, 'notifications', welcomeNotifId), sanitize({
+                id: welcomeNotifId,
+                userId: newUser.id,
+                title: '₹50 Play Bonus Credited!',
+                message: 'Welcome! ₹50 Play Bonus has been credited to your Bonus Wallet.',
+                type: 'signup_bonus',
+                read: false,
+                timestamp: Date.now()
+            }));
+        }
+
+        // Create Referral Record & Lock ₹25 for Referrer
+        if (referrerId && referrerUser) {
+            const referralId = 'ref-' + Date.now() + '-' + Math.random().toString(36).substring(2, 6);
+            const refRecord: ReferralRecord = {
                 id: referralId,
                 referrerId,
+                referrerName: referrerUser.username || 'Referrer',
                 referredUserId: newUser.id,
-                commission: 0,
-                timestamp: Date.now()
+                referredUserName: newUser.username,
+                referredUserMobile: mobile,
+                signupDate: Date.now(),
+                depositProgress: 0,
+                requiredDeposit: 100,
+                depositAmount: 0,
+                status: 'LOCKED',
+                bonusAmount: 25,
+                wagerStatus: 'Pending Deposit',
+                wagerRemaining: 50
+            };
+            await setDoc(doc(db, 'referrals', referralId), sanitize(refRecord));
+
+            // Lock ₹25 Bonus for Referrer
+            await updateDoc(doc(db, 'users', referrerId), {
+                lockedBonus: increment(25)
             });
+
+            // Transaction for Referrer
+            const refTxId = 'tx-reflock-' + Date.now();
+            await setDoc(doc(db, 'transactions', refTxId), sanitize({
+                id: refTxId,
+                userId: referrerId,
+                userName: referrerUser.username,
+                type: 'REFERRAL_LOCKED',
+                amount: 25,
+                status: 'COMPLETED',
+                timestamp: Date.now(),
+                description: `Referral Bonus ₹25 Locked for referring ${newUser.username}`
+            }));
+
+            // Notification for Referrer
+            const notifId = 'notif-' + Date.now() + '-ref';
+            await setDoc(doc(db, 'notifications', notifId), sanitize({
+                id: notifId,
+                userId: referrerId,
+                title: 'New Referral Registered!',
+                message: `₹25 Referral Bonus locked for ${newUser.username}. Unlocks when they deposit ₹100+.`,
+                type: 'referral_locked',
+                read: false,
+                timestamp: Date.now()
+            }));
+        }
+
+        // Fraud Detection: Check multiple accounts on same deviceId
+        if (deviceId) {
+            const deviceQuery = query(collection(db, 'users'), where('deviceId', '==', deviceId));
+            const deviceSnap = await getDocs(deviceQuery);
+            if (deviceSnap.size > 1) {
+                const alertId = 'fraud-' + Date.now();
+                await setDoc(doc(db, 'fraud_alerts', alertId), sanitize({
+                    id: alertId,
+                    userId: newUser.id,
+                    userName: newUser.username,
+                    referredBy: referrerId,
+                    reason: `Multiple accounts created on same device (${deviceSnap.size} accounts)`,
+                    riskLevel: 'HIGH',
+                    deviceId,
+                    timestamp: Date.now(),
+                    status: 'PENDING'
+                }));
+            }
         }
 
         setUser(newUser);
@@ -500,7 +665,8 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
       
       const newUser: User = {
           id: role.toLowerCase() + '-' + Date.now(), username, email, mobile, password, role,
-          wallet_balance: 0, referralCode: role.substring(0,3) + Math.random().toString(36).substring(2, 6).toUpperCase(),
+          wallet_balance: 0, depositWallet: 0, bonusWallet: 0, lockedBonus: 0, totalWagered: 0, remainingWager: 0,
+          referralCode: role.substring(0,3) + Math.random().toString(36).substring(2, 6).toUpperCase(),
           depositCount: 0, validReferralCount: 0, isSubAgentPending: false
       };
       
@@ -535,6 +701,11 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
                       password: cleanPass,
                       role: 'ADMIN',
                       wallet_balance: 10000,
+                      depositWallet: 10000,
+                      bonusWallet: 0,
+                      lockedBonus: 0,
+                      totalWagered: 0,
+                      remainingWager: 0,
                       referralCode: 'ADMIN001',
                       depositCount: 0,
                       validReferralCount: 0
@@ -903,15 +1074,15 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
           if (!reqDocSnap.exists()) throw new Error("Request not found");
           const reqDataInit = reqDocSnap.data() as DepositRequest;
           
-          let referralDocId: string | null = null;
+          let referralDocToUnlock: ReferralRecord | null = null;
           const userDocSnap = await getDoc(doc(db, 'users', reqDataInit.userId));
           if (userDocSnap.exists()) {
               const userDataInit = userDocSnap.data() as User;
               if (userDataInit.referredBy) {
-                  const q = query(collection(db, 'referrals'), where('referrerId', '==', userDataInit.referredBy), where('referredUserId', '==', userDataInit.id));
+                  const q = query(collection(db, 'referrals'), where('referredUserId', '==', userDataInit.id), where('status', '==', 'LOCKED'));
                   const querySnapshot = await getDocs(q);
                   if (!querySnapshot.empty) {
-                      referralDocId = querySnapshot.docs[0].id;
+                      referralDocToUnlock = { id: querySnapshot.docs[0].id, ...querySnapshot.docs[0].data() } as ReferralRecord;
                   }
               }
           }
@@ -928,10 +1099,18 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
               if (!userDoc.exists()) throw new Error("User not found");
               const userData = userDoc.data() as User;
 
+              const newDepositCount = (userData.depositCount || 0) + 1;
+              const newDepositWallet = (userData.depositWallet || 0) + reqData.amount;
+              const currentBonusWallet = userData.bonusWallet || 0;
+              const newTotalBalance = newDepositWallet + currentBonusWallet;
+              const newRemainingWager = (userData.remainingWager || 0) + reqData.amount; // 1x deposit wagering
+
               transaction.update(reqRef, { status: 'approved' });
               transaction.update(userRef, { 
-                  wallet_balance: increment(reqData.amount),
-                  depositCount: increment(1)
+                  wallet_balance: newTotalBalance,
+                  depositWallet: newDepositWallet,
+                  remainingWager: newRemainingWager,
+                  depositCount: newDepositCount
               });
               
               // Also add to transactions for history
@@ -951,43 +1130,81 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
                   screenshotUrl: reqData.screenshotUrl
               });
 
-              // Referral Commission Logic
-              if (userData.referredBy) {
-                  const referrerRef = doc(db, 'users', userData.referredBy);
-                  const referrerDoc = await transaction.get(referrerRef);
-                  if (referrerDoc.exists()) {
-                      const commissionAmount = Math.floor(reqData.amount * 0.05); // 5% commission
-                      if (commissionAmount > 0) {
-                          const isFirstDeposit = (userData.depositCount || 0) === 0;
+              // Notification for User
+              const depNotifId = 'notif-dep-' + Date.now();
+              transaction.set(doc(db, 'notifications', depNotifId), {
+                  id: depNotifId,
+                  userId: reqData.userId,
+                  title: 'Deposit Approved!',
+                  message: `₹${reqData.amount} deposited successfully into your Deposit Wallet.`,
+                  type: 'deposit_success',
+                  read: false,
+                  timestamp: Date.now()
+              });
+
+              // Unlock Referral Bonus if deposit reaches ₹100+
+              if (referralDocToUnlock) {
+                  const refDocRef = doc(db, 'referrals', referralDocToUnlock.id);
+                  if (newDepositWallet >= (referralDocToUnlock.requiredDeposit || 100)) {
+                      transaction.update(refDocRef, {
+                          status: 'UNLOCKED',
+                          depositProgress: newDepositWallet,
+                          depositAmount: newDepositWallet,
+                          depositCompletionDate: Date.now(),
+                          unlockDate: Date.now()
+                      });
+
+                      // Unlock ₹25 for Referrer
+                      const referrerRef = doc(db, 'users', referralDocToUnlock.referrerId);
+                      const referrerDoc = await transaction.get(referrerRef);
+                      if (referrerDoc.exists()) {
+                          const referrerData = referrerDoc.data() as User;
+                          const rLockedBonus = Math.max(0, (referrerData.lockedBonus || 0) - 25);
+                          const rBonusWallet = (referrerData.bonusWallet || 0) + 25;
+                          const rDepositWallet = referrerData.depositWallet || 0;
+                          const rTotalBalance = rDepositWallet + rBonusWallet;
+
                           transaction.update(referrerRef, {
-                              wallet_balance: increment(commissionAmount),
-                              validReferralCount: increment(isFirstDeposit ? 1 : 0)
+                              lockedBonus: rLockedBonus,
+                              bonusWallet: rBonusWallet,
+                              wallet_balance: rTotalBalance,
+                              validReferralCount: increment(1)
                           });
 
-                          const commTxId = 'comm-' + Date.now() + '-' + Math.random().toString(36).substr(2, 5);
-                          const commTxRef = doc(db, 'transactions', commTxId);
-                          transaction.set(commTxRef, {
-                              id: commTxId,
-                              userId: userData.referredBy,
-                              type: 'COMMISSION',
-                              amount: commissionAmount,
+                          const unlockTxId = 'tx-unlock-' + Date.now();
+                          transaction.set(doc(db, 'transactions', unlockTxId), {
+                              id: unlockTxId,
+                              userId: referralDocToUnlock.referrerId,
+                              userName: referrerData.username,
+                              type: 'BONUS_UNLOCK',
+                              amount: 25,
                               status: 'COMPLETED',
                               timestamp: Date.now(),
-                              description: `Referral commission from ${userData.username || 'User'}`
+                              description: `Referral Bonus ₹25 Unlocked as ${userData.username} made ₹100+ deposit`
                           });
-                          
-                          if (referralDocId) {
-                              const refDocRef = doc(db, 'referrals', referralDocId);
-                              transaction.update(refDocRef, {
-                                  commission: increment(commissionAmount)
-                              });
-                          }
+
+                          const refUnlockNotifId = 'notif-refun-' + Date.now();
+                          transaction.set(doc(db, 'notifications', refUnlockNotifId), {
+                              id: refUnlockNotifId,
+                              userId: referralDocToUnlock.referrerId,
+                              title: 'Referral Bonus Unlocked!',
+                              message: `₹25 added to Bonus Wallet as ${userData.username} completed ₹100+ deposit.`,
+                              type: 'referral_unlocked',
+                              read: false,
+                              timestamp: Date.now()
+                          });
                       }
+                  } else {
+                      transaction.update(refDocRef, {
+                          depositProgress: newDepositWallet,
+                          depositAmount: newDepositWallet
+                      });
                   }
               }
           });
           
           setDepositRequests(prev => prev.map(req => req.id === id ? { ...req, status: 'approved' } : req));
+          showNotification("Deposit approved!", 'success');
       } catch (e: any) {
           console.error("Approve Deposit Error:", e);
           throw e;
@@ -999,7 +1216,6 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
       try {
           await updateDoc(doc(db, 'deposit_requests', id), { status: 'rejected' });
           
-          // Add to transactions for history as rejected
           const reqDoc = await getDoc(doc(db, 'deposit_requests', id));
           if (reqDoc.exists()) {
               const reqData = reqDoc.data() as DepositRequest;
@@ -1032,7 +1248,19 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
           const userDoc = await getDoc(userRef);
           if (!userDoc.exists()) throw new Error("User not found");
           const userData = userDoc.data() as User;
-          if (userData.wallet_balance < amount) throw new Error("Insufficient Balance");
+
+          if (userData.isBanned) {
+              throw new Error("Account is banned from initiating withdrawals.");
+          }
+
+          if ((userData.remainingWager || 0) > 0) {
+              throw new Error(`Cannot withdraw: You have ₹${userData.remainingWager} remaining wager requirement.`);
+          }
+
+          const withdrawableCash = userData.depositWallet || 0;
+          if (withdrawableCash < amount) {
+              throw new Error(`Insufficient withdrawable balance in Deposit Wallet. Available: ₹${withdrawableCash}`);
+          }
 
           if (bankDetails) {
               await updateDoc(userRef, { bankDetails: sanitize(bankDetails) });
@@ -1055,7 +1283,7 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
           return true;
       } catch (e: any) {
           console.error("Withdraw Error", e);
-          showNotification(typeof e === 'string' ? e : "Withdrawal Failed", 'error');
+          showNotification(typeof e === 'string' ? e : (e.message || "Withdrawal Failed"), 'error');
           return false;
       }
   };
@@ -1253,6 +1481,131 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
       }
   };
 
+  // Admin Controls for Referrals, Bonuses & Fraud System
+  const adminUnlockBonus = async (referralId: string): Promise<boolean> => {
+      if (user?.role !== 'ADMIN') return false;
+      try {
+          const refDocRef = doc(db, 'referrals', referralId);
+          const refDoc = await getDoc(refDocRef);
+          if (!refDoc.exists()) return false;
+          const refData = refDoc.data() as ReferralRecord;
+
+          await updateDoc(refDocRef, {
+              status: 'UNLOCKED',
+              unlockDate: Date.now()
+          });
+
+          const referrerRef = doc(db, 'users', refData.referrerId);
+          const referrerDoc = await getDoc(referrerRef);
+          if (referrerDoc.exists()) {
+              const rData = referrerDoc.data() as User;
+              const rLocked = Math.max(0, (rData.lockedBonus || 0) - 25);
+              const rBonus = (rData.bonusWallet || 0) + 25;
+              await updateDoc(referrerRef, {
+                  lockedBonus: rLocked,
+                  bonusWallet: rBonus,
+                  wallet_balance: (rData.depositWallet || 0) + rBonus
+              });
+          }
+
+          const auditId = 'audit-' + Date.now();
+          await setDoc(doc(db, 'audit_logs', auditId), {
+              id: auditId,
+              adminId: user.id,
+              adminName: user.username,
+              action: 'MANUAL_BONUS_UNLOCK',
+              targetUserId: refData.referrerId,
+              details: `Manually unlocked ₹25 bonus for referral ID ${referralId}`,
+              timestamp: Date.now()
+          });
+
+          showNotification("Referral bonus manually unlocked", "success");
+          return true;
+      } catch (err) {
+          console.error("Unlock error", err);
+          return false;
+      }
+  };
+
+  const adminLockBonus = async (referralId: string): Promise<boolean> => {
+      if (user?.role !== 'ADMIN') return false;
+      try {
+          await updateDoc(doc(db, 'referrals', referralId), { status: 'LOCKED' });
+          showNotification("Referral bonus locked", "info");
+          return true;
+      } catch (err) {
+          return false;
+      }
+  };
+
+  const adminCancelBonus = async (referralId: string): Promise<boolean> => {
+      if (user?.role !== 'ADMIN') return false;
+      try {
+          await updateDoc(doc(db, 'referrals', referralId), { status: 'CANCELLED' });
+          showNotification("Referral bonus cancelled", "info");
+          return true;
+      } catch (err) {
+          return false;
+      }
+  };
+
+  const adminBlockReferral = async (userId: string): Promise<boolean> => {
+      if (user?.role !== 'ADMIN') return false;
+      try {
+          await updateDoc(doc(db, 'users', userId), { isReferralBlocked: true });
+          showNotification("Referral features blocked for user", "success");
+          return true;
+      } catch (err) {
+          return false;
+      }
+  };
+
+  const adminBanUser = async (userId: string): Promise<boolean> => {
+      if (user?.role !== 'ADMIN') return false;
+      try {
+          const uRef = doc(db, 'users', userId);
+          const uDoc = await getDoc(uRef);
+          if (!uDoc.exists()) return false;
+          const currentBanned = Boolean(uDoc.data().isBanned);
+          await updateDoc(uRef, { isBanned: !currentBanned });
+          showNotification(currentBanned ? "User unbanned" : "User banned", "success");
+          return true;
+      } catch (err) {
+          return false;
+      }
+  };
+
+  const adminResolveFraudAlert = async (alertId: string, action: 'RESOLVE' | 'BLOCK'): Promise<boolean> => {
+      if (user?.role !== 'ADMIN') return false;
+      try {
+          const alertRef = doc(db, 'fraud_alerts', alertId);
+          const alertDoc = await getDoc(alertRef);
+          if (!alertDoc.exists()) return false;
+          const alertData = alertDoc.data() as FraudAlert;
+
+          if (action === 'BLOCK') {
+              await updateDoc(doc(db, 'users', alertData.userId), { isBanned: true, isReferralBlocked: true });
+              await updateDoc(alertRef, { status: 'BLOCKED' });
+              showNotification("User account blocked and flagged", "success");
+          } else {
+              await updateDoc(alertRef, { status: 'RESOLVED' });
+              showNotification("Fraud alert marked as resolved", "info");
+          }
+          return true;
+      } catch (err) {
+          return false;
+      }
+  };
+
+  const markNotificationRead = async (notifId: string): Promise<void> => {
+      try {
+          await updateDoc(doc(db, 'notifications', notifId), { read: true });
+          setUserNotifications(prev => prev.map(n => n.id === notifId ? { ...n, read: true } : n));
+      } catch (err) {
+          console.error("Error marking notification read", err);
+      }
+  };
+
   return (
     <AppContext.Provider value={{
       user, allUsers, register, createStaffAccount, login, logout, requestSubAgent, promoteToSubAgent, findUserByIdentifier, adminAddFunds,
@@ -1260,7 +1613,8 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
       qrCodeUrl, updateQrCode, deposit, approveDeposit, rejectDeposit, withdraw, approveWithdraw, rejectWithdraw, uploadProof, placeBet, placeBulkBets, isBetting, processGameWinnings,
       deleteResult, maintainResultHistory,
       addTransaction, processTransaction, referUser, bannerConfig, updateBanner, deleteBanner, pendingResults, connectionStatus,
-      notification, showNotification, clearNotification, simulatedActivityEnabled, toggleSimulatedActivity, cancelPendingResult, renewAccess, gameHistory
+      notification, showNotification, clearNotification, simulatedActivityEnabled, toggleSimulatedActivity, cancelPendingResult, renewAccess, gameHistory,
+      referrals, fraudAlerts, userNotifications, auditLogs, adminUnlockBonus, adminLockBonus, adminCancelBonus, adminBlockReferral, adminBanUser, adminResolveFraudAlert, markNotificationRead
     }}>
       {children}
     </AppContext.Provider>

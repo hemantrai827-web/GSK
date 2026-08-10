@@ -39,8 +39,8 @@ export const Wallet: React.FC = () => {
   const [isSubmitting, setIsSubmitting] = useState(false);
 
   // VPA Config
-  const PAYMENT_ADDRESS = "exclusivehub@axl"; 
-  const MERCHANT_NAME = "Wallet Deposit";
+  const PAYMENT_ADDRESS = "gwaliorsattaking01@axl"; 
+  const MERCHANT_NAME = "Gwalior Satta King";
 
   // Pre-fill user data
   useEffect(() => {
@@ -158,29 +158,76 @@ export const Wallet: React.FC = () => {
       }
   };
 
+  const depositWallet = user?.depositWallet || 0;
+  const bonusWallet = user?.bonusWallet || 0;
+  const lockedBonus = user?.lockedBonus || 0;
+  const remainingWager = user?.remainingWager || 0;
+  const totalWagered = user?.totalWagered || 0;
+
   return (
     <div className="max-w-5xl mx-auto space-y-6 animate-in fade-in pb-20">
       {/* Wallet Summary Card */}
-      <div className="glass-panel p-6 rounded-2xl border border-yellow-500/30 bg-gradient-to-br from-slate-900 to-slate-800 relative overflow-hidden animate-float">
-        <div className="absolute top-0 right-0 -mt-10 -mr-10 w-40 h-40 bg-yellow-500/20 rounded-full blur-3xl animate-pulse-slow"></div>
-        <div className="relative z-10 flex flex-col md:flex-row justify-between items-center gap-6">
-          <div className="text-center md:text-left">
-            <p className="text-slate-400 text-sm mb-1 uppercase tracking-wider font-bold">Total Balance</p>
-            <h1 className="text-4xl md:text-5xl font-black text-white flex items-center justify-center md:justify-start gap-1">
-                <span className="text-2xl text-yellow-500 font-serif">₹</span> 
-                {walletBalance.toLocaleString()}
-            </h1>
-            {user?.lockedBalance && user.lockedBalance > 0 ? (
-                <div className="flex items-center gap-2 mt-2 text-xs text-slate-400 bg-black/40 py-1 px-3 rounded-full w-fit mx-auto md:mx-0 border border-red-500/20">
-                    <Lock className="w-3 h-3 text-red-400" />
-                    <span>Locked: ₹{user.lockedBalance.toLocaleString()}</span>
-                </div>
-            ) : null}
+      <div className="glass-panel p-6 rounded-2xl border border-yellow-500/30 bg-gradient-to-br from-slate-900 via-slate-900 to-slate-800 relative overflow-hidden shadow-2xl">
+        <div className="absolute top-0 right-0 -mt-10 -mr-10 w-40 h-40 bg-yellow-500/20 rounded-full blur-3xl animate-pulse-slow pointer-events-none" />
+        
+        <div className="relative z-10 space-y-6">
+          <div className="flex flex-col md:flex-row justify-between items-center gap-6 pb-6 border-b border-white/10">
+            <div className="text-center md:text-left">
+              <p className="text-slate-400 text-xs mb-1 uppercase tracking-wider font-bold">Total Net Balance</p>
+              <h1 className="text-4xl md:text-5xl font-black text-white flex items-center justify-center md:justify-start gap-1">
+                  <span className="text-2xl text-yellow-500 font-serif">₹</span> 
+                  {(depositWallet + bonusWallet).toLocaleString()}
+              </h1>
+            </div>
+            <div className="flex gap-3 w-full md:w-auto">
+               <Button variant={activeTab === 'deposit' ? 'gold' : 'secondary'} onClick={() => setActiveTab('deposit')} className="flex-1 md:flex-none transform hover:scale-105 transition-transform"><ArrowDownCircle className="w-4 h-4 mr-2" /> Deposit</Button>
+               <Button variant={activeTab === 'withdraw' ? 'gold' : 'secondary'} onClick={() => setActiveTab('withdraw')} className="flex-1 md:flex-none transform hover:scale-105 transition-transform"><ArrowUpCircle className="w-4 h-4 mr-2" /> Withdraw</Button>
+            </div>
           </div>
-          <div className="flex gap-4 w-full md:w-auto">
-             <Button variant={activeTab === 'deposit' ? 'gold' : 'secondary'} onClick={() => setActiveTab('deposit')} className="flex-1 md:flex-none transform hover:scale-105 transition-transform"><ArrowDownCircle className="w-4 h-4 mr-2" /> Deposit</Button>
-             <Button variant={activeTab === 'withdraw' ? 'gold' : 'secondary'} onClick={() => setActiveTab('withdraw')} className="flex-1 md:flex-none transform hover:scale-105 transition-transform"><ArrowUpCircle className="w-4 h-4 mr-2" /> Withdraw</Button>
+
+          {/* Sub-Wallets Grid */}
+          <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+            <div className="bg-slate-950/70 p-4 rounded-xl border border-emerald-500/30">
+              <span className="text-[11px] text-emerald-400 uppercase font-bold tracking-wider block mb-1">Deposit Wallet (Cash)</span>
+              <span className="text-xl font-black text-white">₹{depositWallet.toLocaleString()}</span>
+              <span className="text-[10px] text-slate-400 block mt-1">Withdrawable Real Cash</span>
+            </div>
+
+            <div className="bg-slate-950/70 p-4 rounded-xl border border-yellow-500/30">
+              <span className="text-[11px] text-yellow-400 uppercase font-bold tracking-wider block mb-1">Bonus Wallet</span>
+              <span className="text-xl font-black text-yellow-400">₹{bonusWallet.toLocaleString()}</span>
+              <span className="text-[10px] text-slate-400 block mt-1">Unlocked Play Bonus</span>
+            </div>
+
+            <div className="bg-slate-950/70 p-4 rounded-xl border border-amber-500/30">
+              <span className="text-[11px] text-amber-400 uppercase font-bold tracking-wider block mb-1">Locked Bonus</span>
+              <span className="text-xl font-black text-amber-400">₹{lockedBonus.toLocaleString()}</span>
+              <span className="text-[10px] text-slate-400 block mt-1">Pending Referral Unlock</span>
+            </div>
+
+            <div className="bg-slate-950/70 p-4 rounded-xl border border-purple-500/30">
+              <span className="text-[11px] text-purple-400 uppercase font-bold tracking-wider block mb-1">Withdrawable Cash</span>
+              <span className="text-xl font-black text-emerald-400">₹{remainingWager > 0 ? 0 : depositWallet.toLocaleString()}</span>
+              <span className="text-[10px] text-slate-400 block mt-1">
+                {remainingWager > 0 ? 'Locked (Wager Pending)' : 'Available for Withdrawal'}
+              </span>
+            </div>
           </div>
+
+          {/* Wagering Progress Bar */}
+          {remainingWager > 0 && (
+            <div className="bg-amber-500/10 border border-amber-500/30 p-4 rounded-xl space-y-2">
+              <div className="flex justify-between items-center text-xs">
+                <span className="font-bold text-amber-400 flex items-center gap-1.5">
+                  <Lock className="w-3.5 h-3.5" /> 1x Wagering Requirement Pending
+                </span>
+                <span className="font-mono font-bold text-yellow-400">Remaining to Wager: ₹{remainingWager}</span>
+              </div>
+              <p className="text-[11px] text-slate-300">
+                You must play ₹{remainingWager} worth of bets before requesting a cash withdrawal. Total Wagered so far: ₹{totalWagered}.
+              </p>
+            </div>
+          )}
         </div>
       </div>
 
@@ -212,9 +259,7 @@ export const Wallet: React.FC = () => {
                     <div className="grid md:grid-cols-2 gap-8">
                  {/* Left: Payment Gateway Simulator */}
                  <div className="space-y-4 max-h-[600px] overflow-y-auto custom-scrollbar pr-2">
-                     <UpiCard label="UPI 1" upiId={PAYMENT_ADDRESS} amount={amount} showId={true} onCopy={handleCopy} />
-                     <UpiCard label="UPI 2" upiId="9755878032@ibl" amount={amount} showId={true} onCopy={handleCopy} />
-                     <UpiCard label="UPI 3" upiId="7772080059@ybl" amount={amount} showId={false} onCopy={handleCopy} />
+                     <UpiCard label="Official UPI QR" upiId={PAYMENT_ADDRESS} amount={amount} showId={true} onCopy={handleCopy} />
 
                      <div className="w-full space-y-3 mt-4 mb-4">
                         <p className="text-sm text-slate-300 mb-2 text-center">Or tap a button below to pay via UPI app</p>

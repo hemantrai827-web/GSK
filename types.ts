@@ -6,6 +6,7 @@ export interface BankDetails {
   accountNumber: string;
   ifsc: string;
   bankName?: string;
+  upiId?: string;
 }
 
 export interface User {
@@ -15,8 +16,13 @@ export interface User {
   mobile?: string;
   password?: string;
   role: UserRole;
-  wallet_balance: number;
+  wallet_balance: number; // Combined/Main balance getter or deposit balance
+  depositWallet: number; // Real deposited cash & cash winnings
+  bonusWallet: number; // Unlocked Play Bonus
+  lockedBonus: number; // Locked referral bonus (pending referee deposit)
   lockedBalance?: number; // Funds locked in pending withdrawals
+  totalWagered: number; // Total volume wagered in games
+  remainingWager: number; // Remaining wager requirement before withdrawal
   referralCode: string;
   referredBy?: string;
   depositCount: number;
@@ -26,6 +32,12 @@ export interface User {
   access_expires_at?: any; // Timestamp for agent access expiry
   agent_status?: 'active' | 'expired';
   agent_expiry?: any;
+  isBanned?: boolean;
+  isReferralBlocked?: boolean;
+  ipAddress?: string;
+  deviceId?: string;
+  upiId?: string;
+  createdAt?: number;
 }
 
 export interface AgentPayment {
@@ -96,7 +108,21 @@ export interface Transaction {
   userId: string;
   userName?: string; // Captured at time of request
   userMobile?: string; // Captured at time of request
-  type: 'DEPOSIT' | 'WITHDRAW' | 'BONUS' | 'REFERRAL' | 'GAME_FEE' | 'GAME_WIN' | 'COMMISSION' | 'ADMIN_TRANSFER' | 'AGENT_SUBSCRIPTION';
+  type: 
+    | 'DEPOSIT' 
+    | 'WITHDRAW' 
+    | 'BONUS' 
+    | 'REFERRAL' 
+    | 'REFERRAL_LOCKED' 
+    | 'BONUS_UNLOCK' 
+    | 'WELCOME_BONUS' 
+    | 'WAGER_COMPLETED' 
+    | 'WALLET_TRANSFER' 
+    | 'GAME_FEE' 
+    | 'GAME_WIN' 
+    | 'COMMISSION' 
+    | 'ADMIN_TRANSFER' 
+    | 'AGENT_SUBSCRIPTION';
   amount: number;
   status: 'PENDING' | 'COMPLETED' | 'REJECTED';
   timestamp: number;
@@ -106,6 +132,59 @@ export interface Transaction {
   screenshotUrl?: string; // Explicit field for deposit proof
   storagePath?: string; // Path in firebase storage for deletion
   bankDetailsSnapshot?: BankDetails;
+}
+
+export interface ReferralRecord {
+  id: string;
+  referrerId: string;
+  referrerName: string;
+  referredUserId: string;
+  referredUserName: string;
+  referredUserMobile?: string;
+  signupDate: number;
+  depositProgress: number; // Current total deposit amount by referee
+  requiredDeposit: number; // Default 100
+  depositAmount: number; // Total deposit amount by referee
+  status: 'LOCKED' | 'UNLOCKED' | 'CANCELLED' | 'BLOCKED';
+  bonusAmount: number; // Default 25
+  depositCompletionDate?: number | null;
+  unlockDate?: number | null;
+  wagerStatus?: string;
+  wagerRemaining?: number;
+}
+
+export interface FraudAlert {
+  id: string;
+  userId: string;
+  userName: string;
+  referredBy?: string;
+  reason: string;
+  riskLevel: 'HIGH' | 'MEDIUM' | 'LOW';
+  ipAddress?: string;
+  deviceId?: string;
+  upiId?: string;
+  timestamp: number;
+  status: 'PENDING' | 'RESOLVED' | 'BLOCKED';
+}
+
+export interface AuditLog {
+  id: string;
+  adminId: string;
+  adminName: string;
+  action: string;
+  targetUserId: string;
+  details: string;
+  timestamp: number;
+}
+
+export interface UserNotification {
+  id: string;
+  userId: string;
+  title: string;
+  message: string;
+  type: 'signup_bonus' | 'referral_locked' | 'referral_unlocked' | 'deposit_success' | 'wager_completed' | 'withdrawal_approved' | 'withdrawal_rejected' | 'info';
+  read: boolean;
+  timestamp: number;
 }
 
 export interface ResultLog {
@@ -119,3 +198,4 @@ export interface ResultLog {
   roundId?: string;
   expiresAt?: number; // For 24h retention policy
 }
+

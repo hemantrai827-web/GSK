@@ -7,11 +7,11 @@ import { Casino } from './pages/Casino';
 import { Mines } from './pages/Mines';
 import { Aviator } from './pages/Aviator';
 import { Wallet } from './pages/Wallet';
+import { ReferEarn } from './pages/ReferEarn';
 import { AdminPanel } from './pages/Admin';
 import { AgentSubscription } from './components/AgentSubscription';
 import { AgentPanel } from './pages/AgentPanel';
 import { LiveActivityFeed } from './components/LiveActivityFeed';
-import { AdBanner } from './components/AdBanner';
 import { collection, query, where, getDocs, updateDoc, doc, getDoc } from 'firebase/firestore';
 import { db } from './firebase';
 import { User, Lock, Mail, ChevronRight, UserPlus, ArrowLeft, Check, KeyRound, Phone, CheckCircle, XCircle, X, AlertTriangle } from 'lucide-react';
@@ -41,18 +41,6 @@ const MainContent: React.FC = () => {
 
   // Load saved credentials, URL Params & Global Notice State on mount
   useEffect(() => {
-    // Load Adsterra Script asynchronously after UI renders
-    const loadAdScript = () => {
-      const script = document.createElement('script');
-      script.src = 'https://pl28863888.effectivegatecpm.com/f6/05/1b/f6051b656c5eb947db1c593a2eddc213.js';
-      script.async = true;
-      script.defer = true;
-      document.body.appendChild(script);
-    };
-    
-    // Delay ad script loading slightly to prioritize main content
-    setTimeout(loadAdScript, 1000);
-
     const initAuth = async () => {
         // 1. Check LocalStorage & Auto Login
         const savedCreds = localStorage.getItem('gsk_creds');
@@ -418,6 +406,11 @@ const MainContent: React.FC = () => {
           case 'mines': content = <Mines />; break;
           case 'aviator': content = <Aviator />; break;
           case 'wallet': content = <Wallet />; break;
+          case 'refer':
+          case 'referral':
+          case 'refer-earn':
+            content = <ReferEarn navigateTo={setActiveTab} />;
+            break;
           case 'admin': content = <AdminPanel />; break;
           case 'agent': content = <AgentPanel />; break;
           default: content = <Home navigateTo={setActiveTab} />; break;
@@ -441,13 +434,8 @@ const MainContent: React.FC = () => {
   };
 
   return (
-    <div className="min-h-screen bg-[radial-gradient(ellipse_at_top,_var(--tw-gradient-stops))] from-slate-900 via-[#0f172a] to-black text-slate-200 flex flex-col relative overflow-x-hidden pb-[60px]">
+    <div className="min-h-screen bg-[radial-gradient(ellipse_at_top,_var(--tw-gradient-stops))] from-slate-900 via-[#0f172a] to-black text-slate-200 flex flex-col relative overflow-x-hidden">
       <Navbar activeTab={activeTab} setActiveTab={setActiveTab} />
-      
-      {/* Top Banner Ad */}
-      <div className="w-full flex justify-center mt-2.5 z-10 relative">
-        <AdBanner />
-      </div>
 
       {connectionStatus === 'ERROR' && (
         <div className="bg-red-900/80 border-b border-red-500 text-white px-4 py-2 text-center text-sm font-medium flex items-center justify-center gap-2 animate-pulse z-50 relative mt-2">
@@ -477,7 +465,7 @@ const MainContent: React.FC = () => {
          <div className="absolute bottom-[-10%] right-[-10%] w-[50vw] h-[50vw] bg-yellow-600/5 rounded-full blur-[120px] opacity-60" />
       </div>
 
-      <main className="flex-grow max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8 w-full relative z-10">
+      <main className="flex-grow max-w-7xl mx-auto px-3 sm:px-6 lg:px-8 py-3 sm:py-6 lg:py-8 w-full relative z-10">
         {renderContent()}
       </main>
       
@@ -485,11 +473,6 @@ const MainContent: React.FC = () => {
          <p className="mb-2 font-medium">Gwalior Satta King &copy; 2024. All Rights Reserved.</p>
          <p className="text-xs opacity-70">18+ Only. Gambling involves risk. Please play responsibly.</p>
       </footer>
-
-      {/* Bottom Sticky Banner Ad */}
-      <div className="fixed bottom-0 left-0 w-full bg-black z-[9999] flex justify-center items-center shadow-[0_-4px_10px_rgba(0,0,0,0.5)]">
-        <AdBanner />
-      </div>
     </div>
   );
 };

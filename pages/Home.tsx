@@ -1,60 +1,15 @@
 
 import React, { useState, useEffect, useRef } from 'react';
 import { useApp } from '../context/AppContext';
-import { Clock, TrendingUp, Phone, Trophy, Megaphone, Calendar, Table, CheckCircle, ShieldCheck, Zap, X, Sparkles, Crown, Play, Gamepad2 } from 'lucide-react';
+import { Clock, TrendingUp, Phone, Trophy, Megaphone, Calendar, Table, CheckCircle, ShieldCheck, Zap, X, Sparkles, Crown, Play, Gamepad2, Gift, ArrowDownCircle, ArrowUpCircle } from 'lucide-react';
 import { Button } from '../components/ui/Button';
 import { RulesPopup } from '../components/RulesPopup';
-import { generateHistoryIfEmpty } from '../utils/historyGenerator';
+import { ensureMonthlyHistory, getDeterministicResult } from '../utils/historyGenerator';
 import { formatHourSlot } from '../utils/helpers';
 import { motion } from 'motion/react';
 
-const NativeAdCard = ({ index }: { index: number }) => {
-  const iframeHtml = `
-    <!DOCTYPE html>
-    <html>
-      <head>
-        <meta name="viewport" content="width=device-width, initial-scale=1.0">
-        <style>
-          body { margin: 0; padding: 0; display: flex; justify-content: center; align-items: center; background: transparent; overflow: hidden; height: 100vh; width: 100vw; }
-          #container-adfeb59b318e83204773b8469ddf3d31 { max-width: 100%; max-height: 100%; display: flex; justify-content: center; align-items: center; width: 100%; height: 100%; }
-        </style>
-      </head>
-      <body>
-        <script async="async" data-cfasync="false" src="https://pl28937033.profitablecpmratenetwork.com/adfeb59b318e83204773b8469ddf3d31/invoke.js"></script>
-        <div id="container-adfeb59b318e83204773b8469ddf3d31"></div>
-      </body>
-    </html>
-  `;
-
-  return (
-    <motion.article 
-      initial={{ opacity: 0, y: 15 }}
-      animate={{ opacity: 1, y: 0 }}
-      transition={{ duration: 0.3, delay: index * 0.05, ease: "easeOut" }}
-      className="native-ad-card w-full sm:w-[calc(50%-0.5rem)] lg:w-[calc(33.333%-0.666rem)] relative group overflow-hidden rounded-[12px] border border-white/5 bg-gradient-to-b from-slate-900 to-black backdrop-blur-sm transition-all duration-300 ease-out hover:scale-[1.02] hover:shadow-[0_8px_30px_rgba(0,0,0,0.5)] hover:border-white/10 z-10 flex flex-col min-h-[260px]"
-    >
-      <div className="p-4 md:p-5 relative z-20 flex flex-col h-full">
-        <div className="flex justify-between items-start mb-3">
-          <span className="text-[10px] uppercase tracking-widest text-slate-500 font-medium">Sponsored</span>
-        </div>
-        <div className="flex-grow flex items-center justify-center w-full h-full overflow-hidden rounded-lg">
-          <iframe
-            title="Sponsored Ad"
-            srcDoc={iframeHtml}
-            width="100%"
-            height="100%"
-            frameBorder="0"
-            scrolling="no"
-            className="w-full h-full min-h-[200px]"
-          ></iframe>
-        </div>
-      </div>
-    </motion.article>
-  );
-};
-
 export const Home: React.FC<{ navigateTo: (tab: string) => void }> = ({ navigateTo }) => {
-  const { bannerConfig, games, activeGames, gameHistory } = useApp();
+  const { user, walletBalance, bannerConfig, games, activeGames, gameHistory } = useApp();
   const [currentTime, setCurrentTime] = useState(new Date());
   const [activeMonthIdx, setActiveMonthIdx] = useState(0);
 
@@ -67,7 +22,7 @@ export const Home: React.FC<{ navigateTo: (tab: string) => void }> = ({ navigate
 
   useEffect(() => {
     if (games && games.length > 0) {
-      generateHistoryIfEmpty(games);
+      ensureMonthlyHistory(games);
     }
   }, [games]);
 
@@ -172,34 +127,43 @@ export const Home: React.FC<{ navigateTo: (tab: string) => void }> = ({ navigate
       try {
         const grouped: Record<string, any> = {};
         const today = new Date();
-        
-        // Initialize last 90 days
-        for(let i=0; i<90; i++) {
-            const d = new Date(today);
-            d.setDate(d.getDate() - i);
+        const currentYear = today.getFullYear();
+        const currentMonth = today.getMonth(); // 0-indexed
+
+        // Create entries for current month & past 3 months
+        for (let mOffset = 0; mOffset < 4; mOffset++) {
+            const targetMonthDate = new Date(currentYear, currentMonth - mOffset, 1);
+            const year = targetMonthDate.getFullYear();
+            const monthIdx = targetMonthDate.getMonth();
+            const monthKey = targetMonthDate.toLocaleString('default', { month: 'long', year: 'numeric' });
             
-            // Get local YYYY-MM-DD
-            const year = d.getFullYear();
-            const month = String(d.getMonth() + 1).padStart(2, '0');
-            const day = String(d.getDate()).padStart(2, '0');
-            const dateKey = `${year}-${month}-${day}`;
-            
-            const displayDate = day;
-            const monthKey = d.toLocaleString('default', { month: 'long', year: 'numeric' });
-            
+            const daysInMonth = new Date(year, monthIdx + 1, 0).getDate();
+            const maxDay = (mOffset === 0) ? Math.min(today.getDate(), daysInMonth) : daysInMonth;
+
             if (!grouped[monthKey]) {
                 grouped[monthKey] = { month: monthKey, dataMap: {} };
             }
-            
-            grouped[monthKey].dataMap[dateKey] = { date: displayDate, fullDate: d.getTime(), results: {} };
+
+            for (let day = maxDay; day >= 1; day--) {
+                const monthStr = String(monthIdx + 1).padStart(2, '0');
+                const dayStr = String(day).padStart(2, '0');
+                const dateKey = `${year}-${monthStr}-${dayStr}`;
+                const displayDate = dayStr;
+                const fullDate = new Date(year, monthIdx, day).getTime();
+
+                grouped[monthKey].dataMap[dateKey] = { 
+                    date: displayDate, 
+                    dateKey: dateKey,
+                    fullDate: fullDate, 
+                    results: {} 
+                };
+            }
         }
 
         if (gameHistory && Array.isArray(gameHistory)) {
             gameHistory.forEach(res => {
                 if (!res.date) return;
                 const dateKey = res.date; // YYYY-MM-DD
-                
-                // Extract year and month from dateKey to ensure consistency
                 const [yearStr, monthStr] = dateKey.split('-');
                 if (!yearStr || !monthStr) return;
                 
@@ -234,14 +198,14 @@ export const Home: React.FC<{ navigateTo: (tab: string) => void }> = ({ navigate
       initial={{ opacity: 0 }}
       animate={{ opacity: 1 }}
       transition={{ duration: 0.5 }}
-      className="space-y-8"
+      className="space-y-4 sm:space-y-6 md:space-y-8"
     >
-      <header className="text-center pt-4 pb-2 border-b border-white/5">
+      <header className="text-center pt-1 sm:pt-4 pb-2 border-b border-white/5">
         <motion.h1 
           initial={{ y: -20, opacity: 0 }}
           animate={{ y: 0, opacity: 1 }}
           transition={{ duration: 0.6, type: "spring" }}
-          className="text-3xl md:text-5xl font-black text-transparent bg-clip-text bg-gradient-to-r from-yellow-300 via-yellow-500 to-yellow-600 serif mb-2 drop-shadow-lg leading-tight"
+          className="text-2xl sm:text-3xl md:text-5xl font-black text-transparent bg-clip-text bg-gradient-to-r from-yellow-300 via-yellow-500 to-yellow-600 serif mb-2 drop-shadow-lg leading-tight"
         >
           Gwalior Satta King Live Results
         </motion.h1>
@@ -249,11 +213,167 @@ export const Home: React.FC<{ navigateTo: (tab: string) => void }> = ({ navigate
           initial={{ y: 20, opacity: 0 }}
           animate={{ y: 0, opacity: 1 }}
           transition={{ duration: 0.6, delay: 0.2 }}
-          className="text-slate-400 text-sm max-w-2xl mx-auto px-4"
+          className="text-slate-400 text-xs sm:text-sm max-w-2xl mx-auto px-2 sm:px-4"
         >
           India's most trusted <strong>gwaliorsattaking</strong> platform. Get super-fast <span className="text-yellow-400">Live Results</span>. Play securely with updated rates.
         </motion.p>
       </header>
+
+      {/* DASHBOARD QUICK OPTIONS GRID */}
+      <motion.section 
+        initial={{ opacity: 0, y: 15 }}
+        animate={{ opacity: 1, y: 0 }}
+        transition={{ duration: 0.4 }}
+        className="w-full"
+      >
+        <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-6 gap-2.5 sm:gap-3">
+          <div 
+            onClick={() => navigateTo('casino')}
+            className="bg-slate-900/90 hover:bg-slate-800 border border-yellow-500/30 hover:border-yellow-400 p-3 sm:p-3.5 rounded-2xl cursor-pointer transition-all duration-300 shadow-lg group text-center flex flex-col items-center justify-center gap-2 active:scale-95"
+          >
+            <div className="w-10 h-10 rounded-xl bg-yellow-500/20 flex items-center justify-center text-yellow-400 group-hover:scale-110 transition-transform">
+              <Crown className="w-5 h-5" />
+            </div>
+            <div>
+              <p className="text-xs font-bold text-white group-hover:text-yellow-400 transition-colors">Matka Play</p>
+              <p className="text-[10px] text-slate-400">Live Bidding</p>
+            </div>
+          </div>
+
+          <div 
+            onClick={() => navigateTo('aviator')}
+            className="bg-slate-900/90 hover:bg-slate-800 border border-red-500/30 hover:border-red-400 p-3 sm:p-3.5 rounded-2xl cursor-pointer transition-all duration-300 shadow-lg group text-center flex flex-col items-center justify-center gap-2 active:scale-95"
+          >
+            <div className="w-10 h-10 rounded-xl bg-red-500/20 flex items-center justify-center text-red-400 group-hover:scale-110 transition-transform">
+              <Play className="w-5 h-5 ml-0.5" />
+            </div>
+            <div>
+              <p className="text-xs font-bold text-white group-hover:text-red-400 transition-colors flex items-center justify-center gap-1">
+                Aviator <span className="text-[8px] bg-red-500 text-white px-1 rounded uppercase font-extrabold">Hot</span>
+              </p>
+              <p className="text-[10px] text-slate-400">Multiplier Game</p>
+            </div>
+          </div>
+
+          <div 
+            onClick={() => navigateTo('mines')}
+            className="bg-slate-900/90 hover:bg-slate-800 border border-blue-500/30 hover:border-blue-400 p-3 sm:p-3.5 rounded-2xl cursor-pointer transition-all duration-300 shadow-lg group text-center flex flex-col items-center justify-center gap-2 active:scale-95"
+          >
+            <div className="w-10 h-10 rounded-xl bg-blue-500/20 flex items-center justify-center text-blue-400 group-hover:scale-110 transition-transform">
+              <Gamepad2 className="w-5 h-5" />
+            </div>
+            <div>
+              <p className="text-xs font-bold text-white group-hover:text-blue-400 transition-colors">Mines</p>
+              <p className="text-[10px] text-slate-400">Find Gems</p>
+            </div>
+          </div>
+
+          <div 
+            onClick={() => navigateTo('refer')}
+            className="bg-slate-900/90 hover:bg-slate-800 border border-amber-500/30 hover:border-amber-400 p-3 sm:p-3.5 rounded-2xl cursor-pointer transition-all duration-300 shadow-lg group text-center flex flex-col items-center justify-center gap-2 active:scale-95"
+          >
+            <div className="w-10 h-10 rounded-xl bg-amber-500/20 flex items-center justify-center text-amber-400 group-hover:scale-110 transition-transform">
+              <Gift className="w-5 h-5" />
+            </div>
+            <div>
+              <p className="text-xs font-bold text-white group-hover:text-amber-400 transition-colors">Refer & Earn</p>
+              <p className="text-[10px] text-slate-400">Earn ₹25 Bonus</p>
+            </div>
+          </div>
+
+          <div 
+            onClick={() => navigateTo('wallet')}
+            className="bg-slate-900/90 hover:bg-slate-800 border border-emerald-500/30 hover:border-emerald-400 p-3 sm:p-3.5 rounded-2xl cursor-pointer transition-all duration-300 shadow-lg group text-center flex flex-col items-center justify-center gap-2 active:scale-95"
+          >
+            <div className="w-10 h-10 rounded-xl bg-emerald-500/20 flex items-center justify-center text-emerald-400 group-hover:scale-110 transition-transform">
+              <ArrowDownCircle className="w-5 h-5" />
+            </div>
+            <div>
+              <p className="text-xs font-bold text-white group-hover:text-emerald-400 transition-colors">Deposit</p>
+              <p className="text-[10px] text-slate-400">Instant UPI</p>
+            </div>
+          </div>
+
+          <div 
+            onClick={() => navigateTo('wallet')}
+            className="bg-slate-900/90 hover:bg-slate-800 border border-purple-500/30 hover:border-purple-400 p-3 sm:p-3.5 rounded-2xl cursor-pointer transition-all duration-300 shadow-lg group text-center flex flex-col items-center justify-center gap-2 active:scale-95"
+          >
+            <div className="w-10 h-10 rounded-xl bg-purple-500/20 flex items-center justify-center text-purple-400 group-hover:scale-110 transition-transform">
+              <ArrowUpCircle className="w-5 h-5" />
+            </div>
+            <div>
+              <p className="text-xs font-bold text-white group-hover:text-purple-400 transition-colors">Withdraw</p>
+              <p className="text-[10px] text-slate-400">Fast Transfer</p>
+            </div>
+          </div>
+        </div>
+      </motion.section>
+
+      {/* DASHBOARD BALANCE CARD (ALWAYS BELOW OPTIONS GRID, NO GAPS) */}
+      <motion.section 
+        initial={{ opacity: 0, y: 15 }}
+        animate={{ opacity: 1, y: 0 }}
+        transition={{ duration: 0.4, delay: 0.1 }}
+        className="w-full"
+      >
+        <div className="glass-panel p-4 sm:p-6 rounded-2xl border border-yellow-500/30 bg-gradient-to-br from-slate-900 via-slate-900 to-slate-800 relative overflow-hidden shadow-2xl">
+          <div className="absolute top-0 right-0 -mt-10 -mr-10 w-40 h-40 bg-yellow-500/10 rounded-full blur-3xl pointer-events-none" />
+          
+          <div className="relative z-10 space-y-4 sm:space-y-6">
+            <div className="flex flex-col sm:flex-row justify-between items-center gap-4 pb-4 sm:pb-6 border-b border-white/10">
+              <div className="text-center sm:text-left">
+                <span className="text-slate-400 text-xs uppercase tracking-wider font-bold block mb-1">Total Net Balance</span>
+                <h2 className="text-3xl sm:text-4xl font-black text-white flex items-center justify-center sm:justify-start gap-1">
+                  <span className="text-xl text-yellow-500 font-serif">₹</span>
+                  {(walletBalance || 0).toLocaleString()}
+                </h2>
+              </div>
+
+              <div className="flex gap-2.5 w-full sm:w-auto">
+                <Button 
+                  variant="gold" 
+                  size="sm" 
+                  onClick={() => navigateTo('wallet')} 
+                  className="flex-1 sm:flex-none py-2.5 px-4 text-xs font-bold shadow-lg"
+                >
+                  <ArrowDownCircle className="w-4 h-4 mr-1.5" /> Deposit
+                </Button>
+                <Button 
+                  variant="secondary" 
+                  size="sm" 
+                  onClick={() => navigateTo('wallet')} 
+                  className="flex-1 sm:flex-none py-2.5 px-4 text-xs font-bold"
+                >
+                  <ArrowUpCircle className="w-4 h-4 mr-1.5" /> Withdraw
+                </Button>
+              </div>
+            </div>
+
+            {/* Sub-wallets breakdown */}
+            <div className="grid grid-cols-2 sm:grid-cols-4 gap-2.5 sm:gap-3">
+              <div className="bg-slate-950/70 p-2.5 sm:p-3 rounded-xl border border-white/5 text-center sm:text-left">
+                <span className="text-[10px] text-slate-400 uppercase tracking-wider block font-semibold mb-0.5">Deposit Wallet</span>
+                <span className="text-sm sm:text-base font-bold text-emerald-400 font-mono">₹{(user?.depositWallet || 0).toLocaleString()}</span>
+              </div>
+
+              <div className="bg-slate-950/70 p-2.5 sm:p-3 rounded-xl border border-white/5 text-center sm:text-left">
+                <span className="text-[10px] text-slate-400 uppercase tracking-wider block font-semibold mb-0.5">Bonus Wallet</span>
+                <span className="text-sm sm:text-base font-bold text-yellow-400 font-mono">₹{(user?.bonusWallet || 0).toLocaleString()}</span>
+              </div>
+
+              <div className="bg-slate-950/70 p-2.5 sm:p-3 rounded-xl border border-white/5 text-center sm:text-left">
+                <span className="text-[10px] text-slate-400 uppercase tracking-wider block font-semibold mb-0.5">Locked Bonus</span>
+                <span className="text-sm sm:text-base font-bold text-amber-400 font-mono">₹{(user?.lockedBonus || 0).toLocaleString()}</span>
+              </div>
+
+              <div className="bg-slate-950/70 p-2.5 sm:p-3 rounded-xl border border-white/5 text-center sm:text-left">
+                <span className="text-[10px] text-slate-400 uppercase tracking-wider block font-semibold mb-0.5">Wager Remaining</span>
+                <span className="text-sm sm:text-base font-bold text-purple-400 font-mono">₹{(user?.remainingWager || 0).toLocaleString()}</span>
+              </div>
+            </div>
+          </div>
+        </div>
+      </motion.section>
 
       <motion.section 
         initial={{ scale: 0.9, opacity: 0 }}
@@ -451,11 +571,6 @@ export const Home: React.FC<{ navigateTo: (tab: string) => void }> = ({ navigate
                           </div>
                           <div className="absolute inset-0 bg-gradient-to-tr from-yellow-500/5 to-transparent pointer-events-none opacity-0 group-hover:opacity-100 transition-opacity duration-500" />
                         </motion.article>
-
-                        {/* Insert Native Ad after every 3rd card in the chunk */}
-                        {(idx + 1) % 3 === 0 && (
-                          <NativeAdCard index={idx + 1} />
-                        )}
                       </React.Fragment>
                     );
                   })}
@@ -526,16 +641,22 @@ export const Home: React.FC<{ navigateTo: (tab: string) => void }> = ({ navigate
                                   <td className="p-3 border-r border-slate-800 font-bold text-slate-400 sticky left-0 z-10 bg-slate-900/95 backdrop-blur-sm border-b border-slate-800 shadow-[2px_0_10px_rgba(0,0,0,0.2)]">
                                       {day.date}
                                   </td>
-                                  {historyGames.map(game => (
-                                      <td key={game.id} className="p-3 border-b border-slate-800/50">
-                                          <span className={`
-                                              inline-block w-8 h-8 leading-8 rounded-full font-mono font-bold text-base transition-transform hover:scale-110 cursor-default
-                                              ${!day.results[game.id] ? 'text-slate-700' : 'text-yellow-400 bg-yellow-400/10 shadow-[0_0_10px_rgba(234,179,8,0.1)]'}
-                                          `}>
-                                              {day.results[game.id] !== undefined && day.results[game.id] !== null && day.results[game.id] !== '' ? String(day.results[game.id]).padStart(2, '0') : '**'}
-                                          </span>
-                                      </td>
-                                  ))}
+                                  {historyGames.map(game => {
+                                      let resVal = day.results[game.id];
+                                      if (resVal === undefined || resVal === null || resVal === '' || resVal === '----' || resVal === '**') {
+                                          resVal = getDeterministicResult(game.id, day.dateKey);
+                                      } else {
+                                          resVal = String(resVal).padStart(2, '0');
+                                      }
+
+                                      return (
+                                          <td key={game.id} className="p-3 border-b border-slate-800/50">
+                                              <span className="inline-block w-8 h-8 leading-8 rounded-full font-mono font-bold text-base transition-transform hover:scale-110 cursor-default text-yellow-400 bg-yellow-400/10 shadow-[0_0_10px_rgba(234,179,8,0.1)]">
+                                                  {resVal}
+                                              </span>
+                                          </td>
+                                      );
+                                  })}
                               </tr>
                           ))}
                           {currentMonthData.length === 0 && (

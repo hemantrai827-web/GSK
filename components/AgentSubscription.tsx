@@ -94,7 +94,7 @@ export const AgentSubscription: React.FC = () => {
   const isExpired = (user.access_expires_at !== undefined && user.access_expires_at !== null) ? new Date() > (user.access_expires_at.toDate ? user.access_expires_at.toDate() : new Date(user.access_expires_at)) : true;
 
   const isMobile = /iPhone|iPad|iPod|Android/i.test(navigator.userAgent);
-  const upiUri = 'upi://pay?pa=exclusivehub@axl&pn=Agent%20Activation&am=2000&cu=INR';
+  const upiUri = 'upi://pay?pa=gwaliorsattaking01@axl&pn=Agent%20Activation&am=2000&cu=INR';
   const dynamicQrCodeUrl = `https://api.qrserver.com/v1/create-qr-code/?size=200x200&data=${encodeURIComponent(upiUri)}`;
 
   const handlePaymentClick = () => {
