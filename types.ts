@@ -79,16 +79,23 @@ export interface MatkaGame {
 export interface Bet {
   id: string;
   userId: string;
+  userName?: string;
+  userMobile?: string;
   gameId: string;
+  game_name?: string;
   gameType: 'BAZAAR' | 'MATKA';
   selection: string;
   amount: number;
-  status: 'PENDING' | 'WON' | 'LOST' | 'COMPLETED' | 'active' | 'win' | 'lose';
+  status: 'PENDING' | 'WON' | 'LOST' | 'COMPLETED' | 'active' | 'win' | 'lose' | 'cancelled';
   winAmount?: number;
+  possibleWin?: number;
+  odds?: number;
   timestamp: number;
   roundId?: string; // Links bet to specific time slot
   bet_number?: string;
   bet_amount?: number;
+  wagerDeducted?: boolean;
+  wagerDeduction?: number;
 }
 
 export interface DepositRequest {

@@ -14,8 +14,27 @@ export const AdminPanel: React.FC = () => {
     processTransaction, approveDeposit, rejectDeposit, approveWithdraw, rejectWithdraw, 
     createStaffAccount, adminAddFunds, showNotification, findUserByIdentifier, renewAccess, 
     qrCodeUrl, processGameWinnings, allUsers, referrals, fraudAlerts, auditLogs,
-    adminUnlockBonus, adminLockBonus, adminCancelBonus, adminBlockReferral, adminBanUser, adminResolveFraudAlert
+    adminUnlockBonus, adminLockBonus, adminCancelBonus, adminBlockReferral, adminBanUser, adminResolveFraudAlert,
+    adminCancelBet, betHistory, adminAddManualBetHistory
   } = useApp();
+
+  const [liveBetsFilterGame, setLiveBetsFilterGame] = useState<string>('ALL');
+  const [liveBetsSearch, setLiveBetsSearch] = useState<string>('');
+  const [liveBetsStatusFilter, setLiveBetsStatusFilter] = useState<'ACTIVE' | 'SETTLED' | 'ALL'>('ACTIVE');
+  const [liveBetsSubTab, setLiveBetsSubTab] = useState<'LIVE' | 'HISTORY' | 'LOAD_MATRIX'>('LIVE');
+  const [showAddManualModal, setShowAddManualModal] = useState(false);
+  const [manualHistoryForm, setManualHistoryForm] = useState({
+      userId: '',
+      userName: '',
+      userMobile: '',
+      gameId: '',
+      game_name: '',
+      selection: '',
+      amount: '',
+      odds: '98',
+      status: 'win' as 'win' | 'lose' | 'cancelled',
+      winAmount: ''
+  });
   
   const [activeTab, setActiveTab] = useState<'dashboard' | 'results' | 'funds' | 'users' | 'requests' | 'staff' | 'live_bets' | 'agent_chats' | 'referrals' | 'fraud' | 'audit_logs'>('results');
   const [referralSearch, setReferralSearch] = useState('');
@@ -171,6 +190,54 @@ export const AdminPanel: React.FC = () => {
 
       return { gridData, totalGameLoad };
   }, [bets, selectedAnalysisGameId, games]);
+
+  const activeLiveBets = useMemo(() => {
+      return bets.filter(b => b.status === 'active' || b.status === 'PENDING');
+  }, [bets]);
+
+  const settledBetsHistory = useMemo(() => {
+      const map = new Map<string, any>();
+      
+      // First load old/manual records from betHistory collection
+      (betHistory || []).forEach(b => {
+          map.set(b.id, b);
+      });
+
+      // Then load settled bets from bets collection
+      bets.filter(b => b.status === 'win' || b.status === 'lose' || b.status === 'WON' || b.status === 'LOST' || b.status === 'cancelled')
+          .forEach(b => {
+              map.set(b.id, b);
+          });
+
+      return Array.from(map.values()).sort((a, b) => (b.timestamp || 0) - (a.timestamp || 0));
+  }, [bets, betHistory]);
+
+  const displayBets = useMemo(() => {
+      let source = bets;
+      if (liveBetsSubTab === 'LIVE') {
+          source = activeLiveBets;
+      } else if (liveBetsSubTab === 'HISTORY') {
+          source = settledBetsHistory;
+      }
+
+      return source.filter(b => {
+          const matchesGame = liveBetsFilterGame === 'ALL' || b.gameId === liveBetsFilterGame;
+          const matchesStatus = liveBetsStatusFilter === 'ALL' || 
+              (liveBetsStatusFilter === 'ACTIVE' && (b.status === 'active' || b.status === 'PENDING')) ||
+              (liveBetsStatusFilter === 'SETTLED' && (b.status !== 'active' && b.status !== 'PENDING'));
+          
+          const q = liveBetsSearch.toLowerCase().trim();
+          const matchesSearch = !q || 
+              b.id.toLowerCase().includes(q) ||
+              b.userId.toLowerCase().includes(q) ||
+              (b.userName && b.userName.toLowerCase().includes(q)) ||
+              (b.userMobile && b.userMobile.includes(q)) ||
+              (b.selection && b.selection.toLowerCase().includes(q)) ||
+              (b.game_name && b.game_name.toLowerCase().includes(q));
+
+          return matchesGame && matchesStatus && matchesSearch;
+      });
+  }, [bets, activeLiveBets, settledBetsHistory, liveBetsSubTab, liveBetsFilterGame, liveBetsStatusFilter, liveBetsSearch]);
 
 
   if (!user || (user.role !== 'ADMIN' && user.role !== 'AGENT' && user.role !== 'SUB_AGENT')) {
@@ -702,25 +769,276 @@ export const AdminPanel: React.FC = () => {
         )}
 
         {activeTab === 'live_bets' && canViewStats && (
-            <div className="glass-panel p-6 rounded-xl border border-blue-500/20">
-                <div className="flex justify-between items-center mb-6">
-                    <h3 className="text-xl font-bold text-white flex items-center gap-2"><BarChart3 className="w-5 h-5 text-blue-400" /> Live Bet Monitor</h3>
-                    <select className="bg-slate-800 border-slate-600 rounded px-3 py-1 text-white" value={selectedAnalysisGameId} onChange={(e) => setSelectedAnalysisGameId(e.target.value)}>
-                        <optgroup label="Games">{games.map(g => <option key={g.id} value={g.id}>{g.name}</option>)}</optgroup>
-                    </select>
+            <div className="glass-panel p-6 rounded-xl border border-blue-500/20 space-y-6">
+                {/* Header & Mode Switcher */}
+                <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 pb-4 border-b border-white/10">
+                    <div>
+                        <h3 className="text-xl font-bold text-white flex items-center gap-2">
+                            <BarChart3 className="w-5 h-5 text-blue-400" /> Realtime Live Bets Monitor
+                        </h3>
+                        <p className="text-xs text-slate-400 mt-1">
+                            Monitors active and settled bets in real time across all games
+                        </p>
+                    </div>
+
+                    <div className="flex items-center gap-2 bg-slate-900 p-1.5 rounded-lg border border-slate-800">
+                        <button 
+                            onClick={() => setLiveBetsSubTab('LIVE')}
+                            className={`px-3 py-1.5 rounded-md text-xs font-bold transition-all flex items-center gap-1.5 ${
+                                liveBetsSubTab === 'LIVE' ? 'bg-blue-600 text-white shadow-lg shadow-blue-500/20' : 'text-slate-400 hover:text-white'
+                            }`}
+                        >
+                            <span className="w-2 h-2 rounded-full bg-emerald-400 animate-ping" />
+                            Live Bets ({activeLiveBets.length})
+                        </button>
+                        <button 
+                            onClick={() => setLiveBetsSubTab('HISTORY')}
+                            className={`px-3 py-1.5 rounded-md text-xs font-bold transition-all flex items-center gap-1.5 ${
+                                liveBetsSubTab === 'HISTORY' ? 'bg-blue-600 text-white shadow-lg shadow-blue-500/20' : 'text-slate-400 hover:text-white'
+                            }`}
+                        >
+                            <History className="w-3.5 h-3.5" />
+                            Settled History ({settledBetsHistory.length})
+                        </button>
+                        <button 
+                            onClick={() => setLiveBetsSubTab('LOAD_MATRIX')}
+                            className={`px-3 py-1.5 rounded-md text-xs font-bold transition-all flex items-center gap-1.5 ${
+                                liveBetsSubTab === 'LOAD_MATRIX' ? 'bg-blue-600 text-white shadow-lg shadow-blue-500/20' : 'text-slate-400 hover:text-white'
+                            }`}
+                        >
+                            <LayoutGrid className="w-3.5 h-3.5" />
+                            Load Matrix (00-99)
+                        </button>
+                    </div>
                 </div>
-                <div className="bg-slate-900 p-4 rounded mb-4 flex justify-between">
-                    <div><p className="text-xs text-slate-400">Total Load</p><p className="text-2xl font-bold text-green-400">₹{analysisData.totalGameLoad}</p></div>
-                    <div className="text-right"><p className="text-xs text-slate-400">Active Numbers</p><p className="text-xl font-bold text-white">{analysisData.gridData.filter(d => d.totalAmount > 0).length}</p></div>
-                </div>
-                <div className="grid grid-cols-5 md:grid-cols-10 gap-2">
-                    {analysisData.gridData.map(item => (
-                        <div key={item.number} className={`p-2 rounded border text-center transition-all ${item.totalAmount > 0 ? 'bg-blue-900/40 border-blue-500 scale-105 shadow-lg' : 'bg-slate-900 border-slate-800 opacity-50'}`}>
-                            <div className="font-bold text-white">{item.number}</div>
-                            {item.totalAmount > 0 && <div className="text-xs text-green-400 font-bold">₹{item.totalAmount}</div>}
+
+                {/* Realtime Summary Metrics */}
+                <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+                    <div className="bg-slate-900/80 p-4 rounded-xl border border-blue-500/30">
+                        <span className="text-[11px] text-blue-400 font-bold uppercase tracking-wider block mb-1">Active Live Bets</span>
+                        <div className="text-2xl font-black text-white flex items-center gap-2">
+                            {activeLiveBets.length}
+                            <span className="text-xs text-emerald-400 font-normal flex items-center gap-1 bg-emerald-500/10 px-2 py-0.5 rounded border border-emerald-500/20">
+                                <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse" /> Live Sync
+                            </span>
                         </div>
-                    ))}
+                    </div>
+
+                    <div className="bg-slate-900/80 p-4 rounded-xl border border-emerald-500/30">
+                        <span className="text-[11px] text-emerald-400 font-bold uppercase tracking-wider block mb-1">Active Total Stake</span>
+                        <div className="text-2xl font-black text-emerald-400 font-mono">
+                            ₹{activeLiveBets.reduce((sum, b) => sum + (b.amount || b.bet_amount || 0), 0).toLocaleString()}
+                        </div>
+                    </div>
+
+                    <div className="bg-slate-900/80 p-4 rounded-xl border border-yellow-500/30">
+                        <span className="text-[11px] text-yellow-400 font-bold uppercase tracking-wider block mb-1">Potential Payout</span>
+                        <div className="text-2xl font-black text-yellow-400 font-mono">
+                            ₹{activeLiveBets.reduce((sum, b) => sum + (b.possibleWin || ((b.amount || 0) * (b.odds || 98))), 0).toLocaleString()}
+                        </div>
+                    </div>
+
+                    <div className="bg-slate-900/80 p-4 rounded-xl border border-purple-500/30">
+                        <span className="text-[11px] text-purple-400 font-bold uppercase tracking-wider block mb-1">Total Tracked Bets</span>
+                        <div className="text-2xl font-black text-white font-mono">
+                            {bets.length}
+                        </div>
+                    </div>
                 </div>
+
+                {liveBetsSubTab === 'LOAD_MATRIX' ? (
+                    <div>
+                        <div className="flex justify-between items-center mb-4">
+                            <h4 className="text-sm font-bold text-slate-300">Number Load Distribution Matrix</h4>
+                            <select 
+                                className="bg-slate-800 border border-slate-700 rounded-lg px-3 py-1.5 text-xs text-white outline-none focus:border-blue-500" 
+                                value={selectedAnalysisGameId} 
+                                onChange={(e) => setSelectedAnalysisGameId(e.target.value)}
+                            >
+                                <optgroup label="Games">
+                                    {games.map(g => <option key={g.id} value={g.id}>{g.name}</option>)}
+                                </optgroup>
+                            </select>
+                        </div>
+                        <div className="bg-slate-900/90 p-4 rounded-xl mb-4 flex justify-between border border-white/5">
+                            <div>
+                                <p className="text-xs text-slate-400">Total Load Amount</p>
+                                <p className="text-2xl font-bold text-green-400 font-mono">₹{analysisData.totalGameLoad.toLocaleString()}</p>
+                            </div>
+                            <div className="text-right">
+                                <p className="text-xs text-slate-400">Active Numbers with Stake</p>
+                                <p className="text-xl font-bold text-white">{analysisData.gridData.filter(d => d.totalAmount > 0).length}</p>
+                            </div>
+                        </div>
+                        <div className="grid grid-cols-5 md:grid-cols-10 gap-2">
+                            {analysisData.gridData.map(item => (
+                                <div key={item.number} className={`p-2 rounded-lg border text-center transition-all ${item.totalAmount > 0 ? 'bg-blue-900/40 border-blue-500 scale-105 shadow-lg' : 'bg-slate-900/60 border-slate-800 opacity-50'}`}>
+                                    <div className="font-bold text-white text-sm">{item.number}</div>
+                                    {item.totalAmount > 0 && <div className="text-[11px] text-green-400 font-bold font-mono">₹{item.totalAmount}</div>}
+                                </div>
+                            ))}
+                        </div>
+                    </div>
+                ) : (
+                    <div className="space-y-4">
+                        {/* Filters Row */}
+                        <div className="flex flex-col md:flex-row items-stretch md:items-center justify-between gap-3">
+                            <div className="grid grid-cols-1 md:grid-cols-3 gap-3 flex-1">
+                                <div className="relative">
+                                    <Search className="w-4 h-4 absolute left-3 top-3 text-slate-500" />
+                                    <input 
+                                        type="text"
+                                        placeholder="Search Bet ID, User ID, Username, Mobile or Number..."
+                                        value={liveBetsSearch}
+                                        onChange={(e) => setLiveBetsSearch(e.target.value)}
+                                        className="w-full bg-slate-900 border border-slate-700 rounded-lg pl-9 pr-3 py-2 text-xs text-white placeholder:text-slate-500 focus:border-blue-500 outline-none"
+                                    />
+                                </div>
+
+                                <div className="flex items-center gap-2">
+                                    <Filter className="w-4 h-4 text-slate-400" />
+                                    <select 
+                                        value={liveBetsFilterGame}
+                                        onChange={(e) => setLiveBetsFilterGame(e.target.value)}
+                                        className="w-full bg-slate-900 border border-slate-700 rounded-lg px-3 py-2 text-xs text-white focus:border-blue-500 outline-none"
+                                    >
+                                        <option value="ALL">All Games</option>
+                                        {games.map(g => <option key={g.id} value={g.id}>{g.name}</option>)}
+                                    </select>
+                                </div>
+
+                                <div className="flex items-center gap-2">
+                                    <select 
+                                        value={liveBetsStatusFilter}
+                                        onChange={(e) => setLiveBetsStatusFilter(e.target.value as any)}
+                                        className="w-full bg-slate-900 border border-slate-700 rounded-lg px-3 py-2 text-xs text-white focus:border-blue-500 outline-none"
+                                    >
+                                        <option value="ALL">All Statuses</option>
+                                        <option value="ACTIVE">Active / Live Only</option>
+                                        <option value="SETTLED">Settled Only</option>
+                                    </select>
+                                </div>
+                            </div>
+
+                            {liveBetsSubTab === 'HISTORY' && (
+                                <Button 
+                                    size="sm" 
+                                    variant="gold" 
+                                    onClick={() => setShowAddManualModal(true)}
+                                    className="text-xs flex items-center gap-1.5 whitespace-nowrap self-end md:self-auto"
+                                >
+                                    <Edit3 className="w-3.5 h-3.5" /> + Add Manual History
+                                </Button>
+                            )}
+                        </div>
+
+                        {/* Live Bets Table */}
+                        <div className="overflow-x-auto max-h-[500px] custom-scrollbar border border-slate-800 rounded-xl bg-slate-950/50">
+                            <table className="w-full text-left text-xs">
+                                <thead className="bg-slate-900 text-slate-400 sticky top-0 border-b border-slate-800 font-bold uppercase tracking-wider">
+                                    <tr>
+                                        <th className="p-3">Bet ID</th>
+                                        <th className="p-3">User</th>
+                                        <th className="p-3">Match / Event</th>
+                                        <th className="p-3">Selection</th>
+                                        <th className="p-3 text-center">Odds</th>
+                                        <th className="p-3 text-right">Stake</th>
+                                        <th className="p-3 text-right">Possible Win</th>
+                                        <th className="p-3 text-center">Status</th>
+                                        <th className="p-3">Time</th>
+                                        <th className="p-3 text-right">Actions</th>
+                                    </tr>
+                                </thead>
+                                <tbody className="divide-y divide-slate-800/60">
+                                    {displayBets.length === 0 ? (
+                                        <tr>
+                                            <td colSpan={10} className="p-8 text-center text-slate-500">
+                                                No live bets matching current criteria
+                                            </td>
+                                        </tr>
+                                    ) : (
+                                        displayBets.map(bet => {
+                                            const oddsVal = bet.odds || 98;
+                                            const stakeVal = bet.amount || bet.bet_amount || 0;
+                                            const possibleVal = bet.possibleWin || Math.round(stakeVal * oddsVal);
+                                            const isLive = bet.status === 'active' || bet.status === 'PENDING';
+
+                                            return (
+                                                <tr key={bet.id} className="hover:bg-slate-800/40 transition-colors">
+                                                    <td className="p-3 font-mono font-bold text-slate-300">
+                                                        {bet.id.length > 12 ? `${bet.id.slice(0, 12)}...` : bet.id}
+                                                    </td>
+                                                    <td className="p-3">
+                                                        <div className="font-bold text-white">{bet.userName || 'User'}</div>
+                                                        <div className="text-[10px] text-slate-500 font-mono">ID: {bet.userId.slice(0,8)}...</div>
+                                                        {bet.userMobile && <div className="text-[10px] text-slate-400">{bet.userMobile}</div>}
+                                                    </td>
+                                                    <td className="p-3">
+                                                        <span className="font-bold text-blue-400">{bet.game_name || bet.gameId}</span>
+                                                        <div className="text-[10px] text-slate-500 uppercase">{bet.gameType || 'STANDARD'}</div>
+                                                    </td>
+                                                    <td className="p-3 font-bold text-yellow-400">
+                                                        <span className="bg-yellow-500/10 border border-yellow-500/30 px-2 py-1 rounded text-sm font-mono">
+                                                            {bet.selection || bet.bet_number}
+                                                        </span>
+                                                    </td>
+                                                    <td className="p-3 text-center font-bold text-slate-300">
+                                                        {oddsVal}x
+                                                    </td>
+                                                    <td className="p-3 text-right font-mono font-bold text-emerald-400">
+                                                        ₹{stakeVal.toLocaleString()}
+                                                    </td>
+                                                    <td className="p-3 text-right font-mono font-bold text-yellow-400">
+                                                        ₹{possibleVal.toLocaleString()}
+                                                    </td>
+                                                    <td className="p-3 text-center">
+                                                        {isLive ? (
+                                                            <span className="px-2 py-1 rounded-full text-[10px] font-bold bg-blue-500/20 text-blue-400 border border-blue-500/30 flex items-center justify-center gap-1 w-fit mx-auto">
+                                                                <span className="w-1.5 h-1.5 rounded-full bg-blue-400 animate-ping" />
+                                                                ACTIVE
+                                                            </span>
+                                                        ) : bet.status === 'win' || bet.status === 'WON' ? (
+                                                            <span className="px-2 py-1 rounded-full text-[10px] font-bold bg-green-500/20 text-green-400 border border-green-500/30 flex items-center justify-center gap-1 w-fit mx-auto">
+                                                                <CheckCircle className="w-3 h-3" /> WON
+                                                            </span>
+                                                        ) : bet.status === 'lose' || bet.status === 'LOST' ? (
+                                                            <span className="px-2 py-1 rounded-full text-[10px] font-bold bg-red-500/20 text-red-400 border border-red-500/30 flex items-center justify-center gap-1 w-fit mx-auto">
+                                                                <XCircle className="w-3 h-3" /> LOST
+                                                            </span>
+                                                        ) : (
+                                                            <span className="px-2 py-1 rounded-full text-[10px] font-bold bg-slate-800 text-slate-400 border border-slate-700 w-fit mx-auto block">
+                                                                {bet.status.toUpperCase()}
+                                                            </span>
+                                                        )}
+                                                    </td>
+                                                    <td className="p-3 text-slate-400 text-[11px] whitespace-nowrap">
+                                                        {new Date(bet.timestamp).toLocaleString()}
+                                                    </td>
+                                                    <td className="p-3 text-right">
+                                                        {isLive && (
+                                                            <Button 
+                                                                size="sm" 
+                                                                variant="danger"
+                                                                onClick={() => {
+                                                                    if (confirm(`Cancel bet ${bet.id} and refund ₹${stakeVal}?`)) {
+                                                                        adminCancelBet(bet.id);
+                                                                    }
+                                                                }}
+                                                                className="text-[10px] py-1 h-auto"
+                                                            >
+                                                                Cancel Bet
+                                                            </Button>
+                                                        )}
+                                                    </td>
+                                                </tr>
+                                            );
+                                        })
+                                    )}
+                                </tbody>
+                            </table>
+                        </div>
+                    </div>
+                )}
             </div>
         )}
 
@@ -733,41 +1051,67 @@ export const AdminPanel: React.FC = () => {
                 {allUsers.length === 0 ? <div className="text-center py-10 flex items-center justify-center gap-2 text-slate-400"><RefreshCw className="w-5 h-5 animate-spin"/> Loading Database...</div> : (
                     <div className="overflow-x-auto max-h-[600px] custom-scrollbar">
                         <table className="w-full text-left text-sm">
-                            <thead className="bg-slate-800 text-slate-400 sticky top-0"><tr><th className="p-3">User</th><th className="p-3">Wallet</th><th className="p-3">Bank Details</th><th className="p-3">Role</th><th className="p-3 text-right">Actions</th></tr></thead>
+                            <thead className="bg-slate-800 text-slate-400 sticky top-0">
+                                <tr>
+                                    <th className="p-3">User</th>
+                                    <th className="p-3">Wallet</th>
+                                    <th className="p-3">Wager Status</th>
+                                    <th className="p-3">Bank Details</th>
+                                    <th className="p-3">Role</th>
+                                    <th className="p-3 text-right">Actions</th>
+                                </tr>
+                            </thead>
                             <tbody className="divide-y divide-slate-800">
-                                {filteredUsers.map(u => (
-                                    <tr key={u.id} className="hover:bg-slate-800/30">
-                                        <td className="p-3">
-                                            <div className="font-bold text-white">{u.username}</div>
-                                            <div className="text-xs text-slate-500">{u.mobile}</div>
-                                            <div className="text-[10px] text-slate-600">{u.email}</div>
-                                        </td>
-                                        <td className="p-3 font-bold text-green-400 font-mono">₹{u.wallet_balance}</td>
-                                        <td className="p-3 text-xs text-slate-300">
-                                            {u.bankDetails ? (
-                                                <div>
-                                                    <span className="block text-white">{u.bankDetails.accountNumber}</span>
-                                                    <span className="block text-slate-500">{u.bankDetails.ifsc}</span>
-                                                </div>
-                                            ) : <span className="opacity-50">-</span>}
-                                        </td>
-                                        <td className="p-3">
-                                            <span className="bg-slate-800 px-2 py-0.5 rounded text-xs">{u.role}</span>
-                                            {u.role === 'AGENT' && u.access_expires_at && (
-                                                <div className="text-[10px] text-slate-500 mt-1">
-                                                    Expires: {u.access_expires_at.toDate ? u.access_expires_at.toDate().toLocaleDateString() : new Date(u.access_expires_at).toLocaleDateString()}
-                                                </div>
-                                            )}
-                                        </td>
-                                        <td className="p-3 text-right">
-                                            {u.role === 'AGENT' && isAdmin && (
-                                                <Button size="sm" variant="gold" onClick={() => renewAccess(u.id)}>
-                                                    <RefreshCw className="w-3 h-3 mr-1" /> Renew 7 Days
-                                                </Button>
-                                            )}
-                                        </td>
-                                    </tr>
-                                ))}
+                                {filteredUsers.map(u => {
+                                    const remWager = u.remainingWager || 0;
+                                    const totWager = u.totalWagered || 0;
+
+                                    return (
+                                        <tr key={u.id} className="hover:bg-slate-800/30">
+                                            <td className="p-3">
+                                                <div className="font-bold text-white">{u.username}</div>
+                                                <div className="text-xs text-slate-500">{u.mobile}</div>
+                                                <div className="text-[10px] text-slate-600">{u.email}</div>
+                                            </td>
+                                            <td className="p-3 font-bold text-green-400 font-mono">₹{u.wallet_balance}</td>
+                                            <td className="p-3 text-xs">
+                                                {remWager > 0 ? (
+                                                    <span className="bg-amber-500/20 text-amber-400 font-bold px-2 py-0.5 rounded border border-amber-500/30 inline-block">
+                                                        Req: ₹{remWager}
+                                                    </span>
+                                                ) : (
+                                                    <span className="bg-emerald-500/20 text-emerald-400 font-bold px-2 py-0.5 rounded border border-emerald-500/30 inline-block">
+                                                        Cleared (₹0)
+                                                    </span>
+                                                )}
+                                                <div className="text-[10px] text-slate-500 mt-1">Total Wagered: ₹{totWager}</div>
+                                            </td>
+                                            <td className="p-3 text-xs text-slate-300">
+                                                {u.bankDetails ? (
+                                                    <div>
+                                                        <span className="block text-white">{u.bankDetails.accountNumber}</span>
+                                                        <span className="block text-slate-500">{u.bankDetails.ifsc}</span>
+                                                    </div>
+                                                ) : <span className="opacity-50">-</span>}
+                                            </td>
+                                            <td className="p-3">
+                                                <span className="bg-slate-800 px-2 py-0.5 rounded text-xs">{u.role}</span>
+                                                {u.role === 'AGENT' && u.access_expires_at && (
+                                                    <div className="text-[10px] text-slate-500 mt-1">
+                                                        Expires: {u.access_expires_at.toDate ? u.access_expires_at.toDate().toLocaleDateString() : new Date(u.access_expires_at).toLocaleDateString()}
+                                                    </div>
+                                                )}
+                                            </td>
+                                            <td className="p-3 text-right">
+                                                {u.role === 'AGENT' && isAdmin && (
+                                                    <Button size="sm" variant="gold" onClick={() => renewAccess(u.id)}>
+                                                        <RefreshCw className="w-3 h-3 mr-1" /> Renew 7 Days
+                                                    </Button>
+                                                )}
+                                            </td>
+                                        </tr>
+                                    );
+                                })}
                             </tbody>
                         </table>
                     </div>
@@ -1227,6 +1571,187 @@ export const AdminPanel: React.FC = () => {
                     </Button>
                   </div>
                 </div>
+              </div>
+            </div>
+          )}
+
+          {/* Manual Bet History Modal */}
+          {showAddManualModal && (
+            <div className="fixed inset-0 bg-black/80 backdrop-blur-sm z-50 flex items-center justify-center p-4">
+              <div className="bg-slate-900 border border-blue-500/30 rounded-2xl max-w-lg w-full p-6 space-y-4 relative shadow-2xl">
+                <button
+                  onClick={() => setShowAddManualModal(false)}
+                  className="absolute top-4 right-4 text-slate-400 hover:text-white"
+                >
+                  <XCircle className="w-6 h-6" />
+                </button>
+
+                <h3 className="text-xl font-bold text-white flex items-center gap-2">
+                  <History className="w-5 h-5 text-blue-400" /> Add Manual History Record
+                </h3>
+                <p className="text-xs text-slate-400">
+                  Manually record a completed bet into the bet history table without modifying existing history.
+                </p>
+
+                <form onSubmit={async (e) => {
+                  e.preventDefault();
+                  if (!manualHistoryForm.userId || !manualHistoryForm.gameId || !manualHistoryForm.selection || !manualHistoryForm.amount) {
+                    showNotification("Please fill in all required fields", "error");
+                    return;
+                  }
+                  const selectedUser = allUsers.find(u => u.id === manualHistoryForm.userId);
+                  const selectedGame = games.find(g => g.id === manualHistoryForm.gameId);
+
+                  const ok = await adminAddManualBetHistory({
+                    userId: manualHistoryForm.userId,
+                    userName: selectedUser?.username || manualHistoryForm.userName || 'User',
+                    userMobile: selectedUser?.mobile || manualHistoryForm.userMobile || '',
+                    gameId: manualHistoryForm.gameId,
+                    game_name: selectedGame?.name || manualHistoryForm.game_name || manualHistoryForm.gameId,
+                    selection: manualHistoryForm.selection,
+                    amount: parseFloat(manualHistoryForm.amount),
+                    odds: parseFloat(manualHistoryForm.odds || '98'),
+                    status: manualHistoryForm.status,
+                    winAmount: manualHistoryForm.winAmount ? parseFloat(manualHistoryForm.winAmount) : undefined
+                  });
+
+                  if (ok) {
+                    setShowAddManualModal(false);
+                    setManualHistoryForm({
+                      userId: '',
+                      userName: '',
+                      userMobile: '',
+                      gameId: '',
+                      game_name: '',
+                      selection: '',
+                      amount: '',
+                      odds: '98',
+                      status: 'win',
+                      winAmount: ''
+                    });
+                  }
+                }} className="space-y-3">
+                  <div className="grid grid-cols-2 gap-3">
+                    <div>
+                      <label className="text-[11px] text-slate-400 font-bold block mb-1">User</label>
+                      <select 
+                        value={manualHistoryForm.userId} 
+                        onChange={(e) => {
+                          const uid = e.target.value;
+                          const u = allUsers.find(x => x.id === uid);
+                          setManualHistoryForm(prev => ({
+                            ...prev, 
+                            userId: uid,
+                            userName: u?.username || '',
+                            userMobile: u?.mobile || ''
+                          }));
+                        }}
+                        className="w-full bg-slate-950 border border-slate-700 rounded-lg p-2 text-xs text-white outline-none focus:border-blue-500"
+                        required
+                      >
+                        <option value="">Select User...</option>
+                        {allUsers.map(u => (
+                          <option key={u.id} value={u.id}>{u.username} ({u.mobile || u.id})</option>
+                        ))}
+                      </select>
+                    </div>
+
+                    <div>
+                      <label className="text-[11px] text-slate-400 font-bold block mb-1">Match / Event</label>
+                      <select 
+                        value={manualHistoryForm.gameId} 
+                        onChange={(e) => {
+                          const gid = e.target.value;
+                          const g = games.find(x => x.id === gid);
+                          setManualHistoryForm(prev => ({
+                            ...prev, 
+                            gameId: gid,
+                            game_name: g?.name || ''
+                          }));
+                        }}
+                        className="w-full bg-slate-950 border border-slate-700 rounded-lg p-2 text-xs text-white outline-none focus:border-blue-500"
+                        required
+                      >
+                        <option value="">Select Game...</option>
+                        {games.map(g => (
+                          <option key={g.id} value={g.id}>{g.name}</option>
+                        ))}
+                      </select>
+                    </div>
+                  </div>
+
+                  <div className="grid grid-cols-3 gap-3">
+                    <div>
+                      <label className="text-[11px] text-slate-400 font-bold block mb-1">Selection / Number</label>
+                      <input 
+                        type="text" 
+                        placeholder="e.g. 45" 
+                        value={manualHistoryForm.selection}
+                        onChange={(e) => setManualHistoryForm(prev => ({ ...prev, selection: e.target.value }))}
+                        className="w-full bg-slate-950 border border-slate-700 rounded-lg p-2 text-xs text-white outline-none focus:border-blue-500"
+                        required
+                      />
+                    </div>
+
+                    <div>
+                      <label className="text-[11px] text-slate-400 font-bold block mb-1">Stake Amount (₹)</label>
+                      <input 
+                        type="number" 
+                        placeholder="e.g. 100" 
+                        value={manualHistoryForm.amount}
+                        onChange={(e) => setManualHistoryForm(prev => ({ ...prev, amount: e.target.value }))}
+                        className="w-full bg-slate-950 border border-slate-700 rounded-lg p-2 text-xs text-white outline-none focus:border-blue-500"
+                        required
+                      />
+                    </div>
+
+                    <div>
+                      <label className="text-[11px] text-slate-400 font-bold block mb-1">Odds multiplier</label>
+                      <input 
+                        type="number" 
+                        placeholder="98" 
+                        value={manualHistoryForm.odds}
+                        onChange={(e) => setManualHistoryForm(prev => ({ ...prev, odds: e.target.value }))}
+                        className="w-full bg-slate-950 border border-slate-700 rounded-lg p-2 text-xs text-white outline-none focus:border-blue-500"
+                      />
+                    </div>
+                  </div>
+
+                  <div className="grid grid-cols-2 gap-3">
+                    <div>
+                      <label className="text-[11px] text-slate-400 font-bold block mb-1">Result Status</label>
+                      <select 
+                        value={manualHistoryForm.status} 
+                        onChange={(e) => setManualHistoryForm(prev => ({ ...prev, status: e.target.value as any }))}
+                        className="w-full bg-slate-950 border border-slate-700 rounded-lg p-2 text-xs text-white outline-none focus:border-blue-500"
+                      >
+                        <option value="win">WON</option>
+                        <option value="lose">LOST</option>
+                        <option value="cancelled">CANCELLED</option>
+                      </select>
+                    </div>
+
+                    <div>
+                      <label className="text-[11px] text-slate-400 font-bold block mb-1">Win Amount (₹) (Optional)</label>
+                      <input 
+                        type="number" 
+                        placeholder="Auto calculated if empty" 
+                        value={manualHistoryForm.winAmount}
+                        onChange={(e) => setManualHistoryForm(prev => ({ ...prev, winAmount: e.target.value }))}
+                        className="w-full bg-slate-950 border border-slate-700 rounded-lg p-2 text-xs text-white outline-none focus:border-blue-500"
+                      />
+                    </div>
+                  </div>
+
+                  <div className="pt-2 flex justify-end gap-2">
+                    <Button type="button" variant="secondary" onClick={() => setShowAddManualModal(false)} className="text-xs">
+                      Cancel
+                    </Button>
+                    <Button type="submit" variant="gold" className="text-xs">
+                      Save History Record
+                    </Button>
+                  </div>
+                </form>
               </div>
             </div>
           )}

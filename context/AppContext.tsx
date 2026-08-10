@@ -71,12 +71,28 @@ interface AppContextType {
   cancelPendingResult: (gameId: string) => void;
   renewAccess: (uid: string) => Promise<boolean>;
   gameHistory: any[];
+  betHistory: Bet[];
 
   // Referral, Bonus, Wager & Fraud Systems
   referrals: ReferralRecord[];
   fraudAlerts: FraudAlert[];
   userNotifications: UserNotification[];
   auditLogs: AuditLog[];
+  adminCancelBet: (betId: string) => Promise<boolean>;
+  adminAddManualBetHistory: (record: {
+    userId: string;
+    userName?: string;
+    userMobile?: string;
+    gameId: string;
+    game_name?: string;
+    gameType?: 'BAZAAR' | 'MATKA';
+    selection: string;
+    amount: number;
+    odds?: number;
+    status: 'win' | 'lose' | 'cancelled' | 'WON' | 'LOST';
+    winAmount?: number;
+    timestamp?: number;
+  }) => Promise<boolean>;
   adminUnlockBonus: (referralId: string) => Promise<boolean>;
   adminLockBonus: (referralId: string) => Promise<boolean>;
   adminCancelBonus: (referralId: string) => Promise<boolean>;
@@ -118,6 +134,7 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
   const [clockTick, setClockTick] = useState(Date.now());
 
   const [gameHistory, setGameHistory] = useState<any[]>([]);
+  const [betHistory, setBetHistory] = useState<Bet[]>([]);
 
   // System States
   const [referrals, setReferrals] = useState<ReferralRecord[]>([]);
@@ -169,6 +186,8 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
 
     let unsubGames = () => {};
     let unsubResults = () => {};
+    let unsubBets = () => {};
+    let unsubBetHistory = () => {};
 
     try {
         if (user?.id) {
@@ -199,19 +218,26 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
                 setAllUsers([]);
             }
 
-            let betsQ;
-            if (user.role === 'ADMIN' || user.role === 'AGENT') {
-                betsQ = query(collection(db, 'bets'), orderBy('timestamp', 'desc'), limit(10));
+            if (user.role === 'ADMIN' || user.role === 'AGENT' || user.role === 'SUB_AGENT') {
+                const betsQ = query(collection(db, 'bets'), orderBy('timestamp', 'desc'), limit(500));
+                unsubBets = onSnapshot(betsQ, (snap) => {
+                    const fetchedBets = snap.docs.map(d => ({ id: d.id, ...sanitize(d.data()) } as Bet));
+                    setBets(fetchedBets);
+                }, (err) => console.error("Admin Live Bets Sync Error:", err));
+
+                const betHistoryQ = query(collection(db, 'bet_history'), orderBy('timestamp', 'desc'), limit(500));
+                unsubBetHistory = onSnapshot(betHistoryQ, (snap) => {
+                    const fetchedHistory = snap.docs.map(d => ({ id: d.id, ...sanitize(d.data()) } as Bet));
+                    setBetHistory(fetchedHistory);
+                }, (err) => console.error("Admin Bet History Sync Error:", err));
             } else {
-                betsQ = query(collection(db, 'bets'), where('userId', '==', user.id), orderBy('timestamp', 'desc'), limit(10));
-            }
-            getDocs(betsQ).then((snap) => {
-                const fetchedBets = snap.docs.map(d => ({ id: d.id, ...sanitize(d.data()) } as Bet));
-                if (user.role !== 'ADMIN' && user.role !== 'AGENT') {
+                const betsQ = query(collection(db, 'bets'), where('userId', '==', user.id), orderBy('timestamp', 'desc'), limit(200));
+                unsubBets = onSnapshot(betsQ, (snap) => {
+                    const fetchedBets = snap.docs.map(d => ({ id: d.id, ...sanitize(d.data()) } as Bet));
                     fetchedBets.sort((a, b) => b.timestamp - a.timestamp);
-                }
-                setBets(fetchedBets);
-            }).catch((err) => console.error("Bets Sync Error:", err));
+                    setBets(fetchedBets);
+                }, (err) => console.error("User Bets Sync Error:", err));
+            }
         }
 
         const fetchSettings = () => {
@@ -327,7 +353,7 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
         console.error("Firestore subscription setup failed", e);
     }
 
-    return () => { unsubUser(); clearInterval(settingsInterval); unsubGames(); unsubResults(); };
+    return () => { unsubUser(); clearInterval(settingsInterval); unsubGames(); unsubResults(); unsubBets(); unsubBetHistory(); };
   }, [user?.id, user?.role]); 
 
   useEffect(() => {
@@ -476,6 +502,9 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
                 winAmount = betAmount * 98;
             }
 
+            const finalStatus = isWin ? 'win' : 'lose';
+            const finalWinAmount = isWin ? winAmount : 0;
+
             if (isWin && winAmount > 0) {
                 batch.update(docSnap.ref, { status: 'win', winAmount });
                 batch.update(doc(db, 'users', bet.userId), { wallet_balance: increment(winAmount), depositWallet: increment(winAmount) });
@@ -491,6 +520,17 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
             } else {
                 batch.update(docSnap.ref, { status: 'lose', winAmount: 0 });
             }
+
+            // Save to bet_history collection for automatic history record creation
+            const historyDocRef = doc(db, 'bet_history', docSnap.id);
+            batch.set(historyDocRef, {
+                ...bet,
+                id: docSnap.id,
+                status: finalStatus,
+                winAmount: finalWinAmount,
+                settledAt: Date.now()
+            }, { merge: true });
+
             processedCount++;
         });
         
@@ -776,6 +816,23 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
       }
   };
 
+  const computeOddsAndWin = (selection: string, amount: number, gameName?: string) => {
+    let odds = GAME_RULES.RATE_ABOVE_CUTOFF; // 98
+    const isJackpot = gameName?.toLowerCase().includes('jackpot');
+    if (isJackpot) {
+      odds = GAME_RULES.RATE_JACKPOT; // 600
+    } else {
+      const numVal = parseInt(selection, 10);
+      if (!isNaN(numVal) && numVal >= 0 && numVal <= 99) {
+        odds = numVal < GAME_RULES.CUTOFF_NUMBER ? GAME_RULES.RATE_BELOW_CUTOFF : GAME_RULES.RATE_ABOVE_CUTOFF;
+      } else if (selection.toLowerCase().includes('haruf') || selection.length === 1) {
+        odds = 9.5;
+      }
+    }
+    const possibleWin = Math.round(amount * odds);
+    return { odds, possibleWin };
+  };
+
   const logout = () => { setUser(null); setAllUsers([]); };
 
   const placeBet = async (gameId: string, gameType: 'BAZAAR' | 'MATKA', selection: string, amount: number, roundId?: string): Promise<string | null> => {
@@ -787,11 +844,18 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
       const betRef = doc(db, 'bets', betId);
       const userRef = doc(db, 'users', user.id);
 
+      const matchedGame = games.find(g => g.id === gameId);
+      const resolvedGameName = matchedGame?.name || gameId;
+      const { odds, possibleWin } = computeOddsAndWin(selection, amount, resolvedGameName);
+
       let retries = 3;
       while (retries > 0) {
           try {
             let newBalance = 0;
+            let newRemainingWager = 0;
+            let newTotalWagered = 0;
             let betData: any = {};
+
             await runTransaction(db, async (transaction) => {
                 const userDoc = await transaction.get(userRef);
                 if (!userDoc.exists()) throw new Error("User Not Found");
@@ -800,20 +864,31 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
                 if (currentBalance < amount) throw new Error("Insufficient Balance");
 
                 newBalance = currentBalance - amount;
-                let status: 'active' | 'COMPLETED' = 'active';
+
+                // Server-side transactional wager deduction logic
+                const currentWager = Math.max(0, Number(userData.remainingWager) || 0);
+                const wagerDeductAmount = Math.min(currentWager, amount);
+                newRemainingWager = Math.max(0, currentWager - wagerDeductAmount);
+                newTotalWagered = (Number(userData.totalWagered) || 0) + amount;
 
                 betData = {
                     id: betId, 
                     userId: user.id, 
+                    userName: user.username || userData.username || 'User',
+                    userMobile: user.mobile || userData.mobile || '',
                     gameId, 
-                    game_name: gameId, 
+                    game_name: resolvedGameName, 
                     gameType, 
                     selection, 
                     bet_number: selection,
                     amount,
                     bet_amount: amount, 
-                    status, 
-                    timestamp: Date.now()
+                    odds,
+                    possibleWin,
+                    status: 'active', 
+                    timestamp: Date.now(),
+                    wagerDeducted: true,
+                    wagerDeduction: wagerDeductAmount
                 };
                 if (roundId) betData.roundId = roundId;
 
@@ -822,6 +897,8 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
                 const txData = {
                     id: txId,
                     userId: user.id,
+                    userName: user.username || userData.username,
+                    userMobile: user.mobile || userData.mobile,
                     type: 'bet',
                     amount: amount,
                     status: 'success',
@@ -830,13 +907,22 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
                     betId: betId
                 };
 
-                transaction.update(userRef, { wallet_balance: newBalance });
+                transaction.update(userRef, { 
+                    wallet_balance: newBalance,
+                    remainingWager: newRemainingWager,
+                    totalWagered: newTotalWagered
+                });
                 transaction.set(betRef, betData);
                 transaction.set(txRef, txData);
             });
             
-            // Realtime update UI
-            setUser(prev => prev ? { ...prev, wallet_balance: newBalance } : null);
+            // Realtime update UI state
+            setUser(prev => prev ? { 
+                ...prev, 
+                wallet_balance: newBalance,
+                remainingWager: newRemainingWager,
+                totalWagered: newTotalWagered
+            } : null);
             setBets(prev => [{ ...betData } as Bet, ...prev]);
             
             setIsBetting(false);
@@ -874,11 +960,17 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
       const totalAmount = betsList.reduce((sum, item) => sum + item.amount, 0);
 
       setIsBetting(true);
+      const matchedGame = games.find(g => g.id === gameId);
+      const resolvedGameName = matchedGame?.name || gameId;
+
       let retries = 3;
       while (retries > 0) {
           try {
               let newBalance = 0;
+              let newRemainingWager = 0;
+              let newTotalWagered = 0;
               let createdBets: any[] = [];
+
               await runTransaction(db, async (transaction) => {
                   const userRef = doc(db, 'users', user.id);
                   const userDoc = await transaction.get(userRef);
@@ -888,23 +980,47 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
                   if (currentBalance < totalAmount) throw new Error("Insufficient Balance");
 
                   newBalance = currentBalance - totalAmount;
-                  transaction.update(userRef, { wallet_balance: newBalance });
+
+                  // Server-side transactional wager deduction logic
+                  const currentWager = Math.max(0, Number(userData.remainingWager) || 0);
+                  const wagerDeductAmount = Math.min(currentWager, totalAmount);
+                  newRemainingWager = Math.max(0, currentWager - wagerDeductAmount);
+                  newTotalWagered = (Number(userData.totalWagered) || 0) + totalAmount;
+
+                  transaction.update(userRef, { 
+                      wallet_balance: newBalance,
+                      remainingWager: newRemainingWager,
+                      totalWagered: newTotalWagered
+                  });
+
+                  let remainingWagerPool = wagerDeductAmount;
 
                   betsList.forEach(item => {
                       const betId = 'bet-' + Date.now() + Math.random().toString(36).substr(2, 5);
                       const betRef = doc(db, 'bets', betId);
+                      const { odds, possibleWin } = computeOddsAndWin(item.selection, item.amount, resolvedGameName);
+
+                      const itemWagerDeduction = Math.min(remainingWagerPool, item.amount);
+                      remainingWagerPool = Math.max(0, remainingWagerPool - itemWagerDeduction);
+
                       const betData: any = {
                           id: betId, 
                           userId: user.id, 
+                          userName: user.username || userData.username || 'User',
+                          userMobile: user.mobile || userData.mobile || '',
                           gameId, 
-                          game_name: gameId,
+                          game_name: resolvedGameName,
                           gameType, 
                           selection: item.selection, 
                           bet_number: item.selection,
                           amount: item.amount,
                           bet_amount: item.amount,
+                          odds,
+                          possibleWin,
                           status: 'active', 
-                          timestamp: Date.now()
+                          timestamp: Date.now(),
+                          wagerDeducted: true,
+                          wagerDeduction: itemWagerDeduction
                       };
                       if (roundId) betData.roundId = roundId;
                       transaction.set(betRef, betData);
@@ -916,6 +1032,8 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
                   const txData = {
                       id: txId,
                       userId: user.id,
+                      userName: user.username || userData.username,
+                      userMobile: user.mobile || userData.mobile,
                       type: 'bet',
                       amount: totalAmount,
                       status: 'success',
@@ -926,8 +1044,13 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
                   transaction.set(txRef, txData);
               });
               
-              // Realtime update UI
-              setUser(prev => prev ? { ...prev, wallet_balance: newBalance } : null);
+              // Realtime update UI state
+              setUser(prev => prev ? { 
+                  ...prev, 
+                  wallet_balance: newBalance,
+                  remainingWager: newRemainingWager,
+                  totalWagered: newTotalWagered
+              } : null);
               setBets(prev => [...createdBets, ...prev]);
               
               setIsBetting(false);
@@ -1103,7 +1226,7 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
               const newDepositWallet = (userData.depositWallet || 0) + reqData.amount;
               const currentBonusWallet = userData.bonusWallet || 0;
               const newTotalBalance = newDepositWallet + currentBonusWallet;
-              const newRemainingWager = (userData.remainingWager || 0) + reqData.amount; // 1x deposit wagering
+              const newRemainingWager = (userData.remainingWager || 0) + (reqData.amount * 3); // 3x deposit wagering requirement
 
               transaction.update(reqRef, { status: 'approved' });
               transaction.update(userRef, { 
@@ -1481,6 +1604,108 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
       }
   };
 
+  const adminCancelBet = async (betId: string): Promise<boolean> => {
+      if (user?.role !== 'ADMIN' && user?.role !== 'AGENT') return false;
+      try {
+          await runTransaction(db, async (transaction) => {
+              const betRef = doc(db, 'bets', betId);
+              const betDoc = await transaction.get(betRef);
+              if (!betDoc.exists()) throw new Error("Bet not found");
+              const betData = betDoc.data() as Bet;
+              if (betData.status !== 'active' && betData.status !== 'PENDING') {
+                  throw new Error("Bet is already settled or cancelled");
+              }
+              const userRef = doc(db, 'users', betData.userId);
+              const userDoc = await transaction.get(userRef);
+              if (userDoc.exists()) {
+                  const userData = userDoc.data() as User;
+                  const betAmount = betData.amount || betData.bet_amount || 0;
+                  const refundedBalance = (userData.wallet_balance || 0) + betAmount;
+                  
+                  let restoredWager = userData.remainingWager || 0;
+                  if (betData.wagerDeducted && betData.wagerDeduction) {
+                      restoredWager += betData.wagerDeduction;
+                  }
+                  const restoredTotalWagered = Math.max(0, (userData.totalWagered || 0) - betAmount);
+
+                  transaction.update(userRef, {
+                      wallet_balance: refundedBalance,
+                      remainingWager: restoredWager,
+                      totalWagered: restoredTotalWagered
+                  });
+              }
+              transaction.update(betRef, { status: 'cancelled' });
+              
+              // Automatically save cancelled bet to bet_history
+              const historyRef = doc(db, 'bet_history', betId);
+              transaction.set(historyRef, {
+                  ...betData,
+                  id: betId,
+                  status: 'cancelled',
+                  settledAt: Date.now()
+              }, { merge: true });
+          });
+          showNotification("Bet cancelled and stake refunded", 'success');
+          return true;
+      } catch (e: any) {
+          console.error("Cancel Bet Error:", e);
+          showNotification(e.message || "Failed to cancel bet", 'error');
+          return false;
+      }
+  };
+
+  const adminAddManualBetHistory = async (record: {
+      userId: string;
+      userName?: string;
+      userMobile?: string;
+      gameId: string;
+      game_name?: string;
+      gameType?: 'BAZAAR' | 'MATKA';
+      selection: string;
+      amount: number;
+      odds?: number;
+      status: 'win' | 'lose' | 'cancelled' | 'WON' | 'LOST';
+      winAmount?: number;
+      timestamp?: number;
+  }): Promise<boolean> => {
+      if (user?.role !== 'ADMIN' && user?.role !== 'AGENT') return false;
+      try {
+          const historyId = 'hist-' + Date.now() + '-' + Math.random().toString(36).substring(2, 7);
+          const oddsVal = record.odds || 98;
+          const isWin = record.status === 'win' || record.status === 'WON';
+          const calcWinAmount = record.winAmount !== undefined ? record.winAmount : (isWin ? Math.round(record.amount * oddsVal) : 0);
+          const ts = record.timestamp || Date.now();
+
+          const historyData = {
+              id: historyId,
+              userId: record.userId,
+              userName: record.userName || 'User',
+              userMobile: record.userMobile || '',
+              gameId: record.gameId,
+              game_name: record.game_name || record.gameId,
+              gameType: record.gameType || 'BAZAAR',
+              selection: record.selection,
+              amount: record.amount,
+              bet_amount: record.amount,
+              odds: oddsVal,
+              status: record.status,
+              winAmount: calcWinAmount,
+              possibleWin: Math.round(record.amount * oddsVal),
+              timestamp: ts,
+              createdAt: serverTimestamp(),
+              isManualEntry: true
+          };
+
+          await setDoc(doc(db, 'bet_history', historyId), historyData);
+          showNotification("Manual Bet History Record Added!", "success");
+          return true;
+      } catch (err: any) {
+          console.error("Error adding manual bet history:", err);
+          showNotification(err.message || "Failed to add manual history record", "error");
+          return false;
+      }
+  };
+
   // Admin Controls for Referrals, Bonuses & Fraud System
   const adminUnlockBonus = async (referralId: string): Promise<boolean> => {
       if (user?.role !== 'ADMIN') return false;
@@ -1613,8 +1838,8 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
       qrCodeUrl, updateQrCode, deposit, approveDeposit, rejectDeposit, withdraw, approveWithdraw, rejectWithdraw, uploadProof, placeBet, placeBulkBets, isBetting, processGameWinnings,
       deleteResult, maintainResultHistory,
       addTransaction, processTransaction, referUser, bannerConfig, updateBanner, deleteBanner, pendingResults, connectionStatus,
-      notification, showNotification, clearNotification, simulatedActivityEnabled, toggleSimulatedActivity, cancelPendingResult, renewAccess, gameHistory,
-      referrals, fraudAlerts, userNotifications, auditLogs, adminUnlockBonus, adminLockBonus, adminCancelBonus, adminBlockReferral, adminBanUser, adminResolveFraudAlert, markNotificationRead
+      notification, showNotification, clearNotification, simulatedActivityEnabled, toggleSimulatedActivity, cancelPendingResult, renewAccess, gameHistory, betHistory,
+      referrals, fraudAlerts, userNotifications, auditLogs, adminCancelBet, adminAddManualBetHistory, adminUnlockBonus, adminLockBonus, adminCancelBonus, adminBlockReferral, adminBanUser, adminResolveFraudAlert, markNotificationRead
     }}>
       {children}
     </AppContext.Provider>
